@@ -1,7 +1,9 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ActivityIndicator, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { AppText } from '../components/AppText';
+import { AppPressable } from '../components/AppPressable';
 import { BrandMark } from '../components/BrandMark';
+import { ButtonLabel } from '../components/ButtonLabel';
 import { ChatIllustration } from '../components/ChatIllustration';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors } from '../theme/colors';
@@ -37,24 +39,24 @@ export function WelcomeScreen({ isBusy = false, errorMessage, onSignUp, onSignIn
 
         <View style={styles.actions}>
           {errorMessage ? <AppText accessibilityRole="alert" style={styles.error}>{errorMessage}</AppText> : null}
-          <Pressable
+          <AppPressable
             accessibilityRole="button"
             disabled={isBusy}
             onPress={onSignUp}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed, isBusy && styles.buttonBusy]}
+            style={[styles.primaryButton, isBusy && styles.buttonBusy]}
           >
-            {isBusy ? <ActivityIndicator color={colors.surface} /> : <AppText style={styles.primaryButtonText}>Sohbete katıl</AppText>}
-          </Pressable>
+            {isBusy ? <ActivityIndicator color={colors.surface} /> : <ButtonLabel style={styles.primaryButtonText}>Sohbete katıl</ButtonLabel>}
+          </AppPressable>
           <AppText style={styles.authHint}>Google hesabınla veya e-postanla devam et.</AppText>
-          <Pressable
+          <AppPressable
             accessibilityRole="button"
             disabled={isBusy}
             onPress={onSignIn}
             hitSlop={10}
             style={styles.signInButton}
           >
-            <AppText style={styles.signInText}>Zaten Chattered’da mısın? <AppText style={styles.signInLink}>Giriş yap</AppText></AppText>
-          </Pressable>
+            <AppText style={styles.signInText}>Zaten Chattered’da mısın? <ButtonLabel style={styles.signInLink}>Giriş yap</ButtonLabel></AppText>
+          </AppPressable>
         </View>
     </ScreenContainer>
   );
@@ -72,7 +74,6 @@ const styles = StyleSheet.create({
   descriptionCompact: { fontSize: 14, lineHeight: 20, marginTop: 8 },
   actions: { width: '100%', paddingTop: 12 },
   primaryButton: { height: 54, borderRadius: 27, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  primaryButtonPressed: { backgroundColor: colors.primaryPressed },
   buttonBusy: { opacity: 0.8 },
   primaryButtonText: { color: colors.surface, fontSize: 16, fontWeight: '600' },
   authHint: { color: colors.muted, textAlign: 'center', fontSize: 12, marginTop: 8 },

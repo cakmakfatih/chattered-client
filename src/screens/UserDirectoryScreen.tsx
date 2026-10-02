@@ -3,7 +3,6 @@ import {
   Alert,
   Animated,
   Image,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
@@ -14,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialDesignIcons } from '@react-native-vector-icons/material-design-icons';
 import { AppText } from '../components/AppText';
+import { AppPressable } from '../components/AppPressable';
 import { BrandMark } from '../components/BrandMark';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors } from '../theme/colors';
@@ -165,7 +165,7 @@ const SearchRow = memo(function SearchRow({
           autoCorrect={false}
         />
         {value.length > 0 ? (
-          <Pressable
+          <AppPressable
             accessibilityRole="button"
             accessibilityLabel="Aramayı temizle"
             hitSlop={8}
@@ -173,7 +173,7 @@ const SearchRow = memo(function SearchRow({
             style={styles.clearButton}
           >
             <AppText style={styles.clearText}>×</AppText>
-          </Pressable>
+          </AppPressable>
         ) : null}
       </View>
     </View>
@@ -190,11 +190,11 @@ const UserRow = memo(function UserRow({
   bioMaxWidth: number;
 }) {
   return (
-    <Pressable
+    <AppPressable
       accessibilityRole="button"
       accessibilityLabel={`@${user.handle}, ${user.description}, ${user.isOnline ? 'çevrimiçi' : 'çevrimdışı'}`}
       onPress={() => onPress(user.handle)}
-      style={({ pressed }) => [styles.userRow, pressed && styles.userRowPressed]}
+      style={styles.userRow}
     >
       <View style={styles.avatarFrame}>
         {user.avatar ? (
@@ -222,7 +222,7 @@ const UserRow = memo(function UserRow({
         </AppText>
       </View>
       <AppText style={styles.chevron} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">›</AppText>
-    </Pressable>
+    </AppPressable>
   );
 });
 
@@ -337,11 +337,11 @@ export function UserDirectoryScreen() {
         getItemLayout={getItemLayout}
         ItemSeparatorComponent={ExploreItemSeparator}
       />
-      <Pressable
+      <AppPressable
         accessibilityRole="button"
         accessibilityLabel="Kişileri karıştır"
         onPress={onShuffle}
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        style={styles.fab}
       >
         <MaterialDesignIcons
           name="shuffle"
@@ -349,7 +349,7 @@ export function UserDirectoryScreen() {
           color={colors.surface}
           accessible={false}
         />
-      </Pressable>
+      </AppPressable>
     </ScreenContainer>
   );
 }
@@ -385,7 +385,6 @@ const styles = StyleSheet.create({
   clearButton: { width: 32, height: 40, alignItems: 'center', justifyContent: 'center', marginRight: -7 },
   clearText: { color: colors.muted, fontSize: 24, lineHeight: 28 },
   userRow: { height: USER_ROW_HEIGHT, flexDirection: 'row', alignItems: 'center' },
-  userRowPressed: { opacity: 0.65 },
   avatarFrame: { width: 54, height: 54, marginRight: 14 },
   avatarImage: { width: 54, height: 54, borderRadius: 27 },
   defaultAvatar: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden', backgroundColor: '#F1F3F4', alignItems: 'center', justifyContent: 'center' },
@@ -399,7 +398,6 @@ const styles = StyleSheet.create({
   separator: { height: USER_ROW_GAP, backgroundColor: colors.surfaceBlue, marginLeft: 68 },
   emptyState: { height: 112, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
   fab: { position: 'absolute', right: 12, bottom: 12, zIndex: 3, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
-  fabPressed: { backgroundColor: colors.primaryPressed, transform: [{ scale: 0.96 }] },
   emptyTitle: { color: colors.ink, fontSize: 16, fontWeight: '600', textAlign: 'center' },
   emptyDescription: { color: colors.muted, fontSize: 14, marginTop: 8, textAlign: 'center' },
 });

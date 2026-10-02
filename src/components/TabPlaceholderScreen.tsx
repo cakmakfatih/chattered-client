@@ -1,6 +1,8 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { AppPressable } from './AppPressable';
 import { AppText } from './AppText';
 import { BrandMark } from './BrandMark';
+import { ButtonLabel } from './ButtonLabel';
 import { ScreenContainer } from './ScreenContainer';
 import { colors } from '../theme/colors';
 
@@ -26,13 +28,13 @@ export function TabPlaceholderScreen({ title, description, actionLabel, onAction
         <AppText style={styles.title}>{title}</AppText>
         <AppText style={styles.description}>{description}</AppText>
         {actionLabel && onAction ? (
-          <Pressable
+          <AppPressable
             accessibilityRole="button"
             onPress={onAction}
-            style={({ pressed }) => [styles.actionButton, pressed && styles.actionPressed]}
+            style={styles.actionButton}
           >
-            <AppText style={styles.actionLabel}>{actionLabel}</AppText>
-          </Pressable>
+            <ButtonLabel style={styles.actionLabel}>{actionLabel}</ButtonLabel>
+          </AppPressable>
         ) : null}
       </View>
     </ScreenContainer>
@@ -48,6 +50,5 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: 22, fontWeight: '600', textAlign: 'center' },
   description: { maxWidth: 290, color: colors.muted, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 9 },
   actionButton: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 22, borderRadius: 23, backgroundColor: colors.surfaceBlue, marginTop: 24 },
-  actionPressed: { opacity: 0.7 },
   actionLabel: { color: colors.primary, fontSize: 14, fontWeight: '600' },
 });
