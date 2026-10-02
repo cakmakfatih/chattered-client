@@ -35,6 +35,7 @@ export type RegistrationStatusResponse = {
 };
 
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
+const apiRequestTimeoutMilliseconds = 15_000;
 
 async function request<TResponse>(
   path: string,
@@ -54,24 +55,35 @@ async function request<TResponse>(
   if (!token) throw new ApiRequestError('Oturum doğrulanamadı. Lütfen tekrar giriş yapın.', 401, 'unauthorized');
 
   let response: Response;
+  let payload: unknown;
+  const abortController = new AbortController();
+  const requestTimeout = setTimeout(() => abortController.abort(), apiRequestTimeoutMilliseconds);
   try {
     response = await fetch(`${apiBaseUrl}/api/v1${path}`, {
       method: body === undefined ? 'GET' : 'POST',
+      signal: abortController.signal,
       headers: {
         Authorization: `Bearer ${token}`,
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+    try {
+      payload = await response.json();
+    } catch (error) {
+      if (abortController.signal.aborted) throw error;
+      payload = null;
+    }
   } catch {
     throw new ApiRequestError(
       'Lütfen bağlantınızı kontrol edin.',
       0,
-      'network_error',
+      abortController.signal.aborted ? 'request_timeout' : 'network_error',
     );
+  } finally {
+    clearTimeout(requestTimeout);
   }
 
-  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const apiError = asApiErrorBody(payload);
     if (response.status === 401) {

@@ -11,7 +11,14 @@ export default function IndexRoute() {
   if (!isLoaded) return <LoadingView />;
   if (!isSignedIn) return <Redirect href="/welcome" />;
   if (state.status === 'loading') return <LoadingView />;
-  if (state.status === 'error') return <RegistrationStatusScreen message={state.message} />;
+  if (state.status === 'error') {
+    return (
+      <RegistrationStatusScreen
+        isUnauthorized={state.apiStatus === 401 || state.errorCode === 'unauthorized'}
+        message={state.message}
+      />
+    );
+  }
   if (state.status === 'incomplete') return <Redirect href="/onboarding" />;
   if (state.status === 'complete') return <Redirect href="/(tabs)" />;
   return <LoadingView />;

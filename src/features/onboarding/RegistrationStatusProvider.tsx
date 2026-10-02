@@ -5,7 +5,14 @@ import { ApiRequestError, getRegistrationStatus, type RegistrationProfile } from
 type RegistrationState =
   | { status: 'signed-out'; userId: null }
   | { status: 'loading'; userId: string | null }
-  | { status: 'error'; userId: string; sessionId: string; message: string }
+  | {
+    status: 'error';
+    userId: string;
+    sessionId: string;
+    message: string;
+    apiStatus: number | null;
+    errorCode: string | null;
+  }
   | { status: 'incomplete'; userId: string; sessionId: string }
   | { status: 'complete'; userId: string; sessionId: string; profile: RegistrationProfile };
 
@@ -58,13 +65,16 @@ export function RegistrationStatusProvider({ children }: { children: ReactNode }
       if (currentRequestId === requestId.current) setStoredState(nextState);
       return nextState;
     } catch (error) {
+      const apiError = error instanceof ApiRequestError ? error : null;
       const nextState: RegistrationState = {
         status: 'error',
         userId,
         sessionId,
-        message: error instanceof ApiRequestError
-          ? error.message
+        message: apiError
+          ? apiError.message
           : 'Kayıt durumu alınamadı. Lütfen tekrar deneyin.',
+        apiStatus: apiError?.status ?? null,
+        errorCode: apiError?.code ?? null,
       };
       if (currentRequestId === requestId.current) setStoredState(nextState);
       return nextState;
