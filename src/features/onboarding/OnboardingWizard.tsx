@@ -69,7 +69,7 @@ export function OnboardingWizard() {
     setStep(nextStep);
     Animated.timing(slideProgress, {
       toValue: 1,
-      duration: 220,
+      duration: 300,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(({ finished }) => {
@@ -227,7 +227,7 @@ export function OnboardingWizard() {
     inputRange: [0, 1],
     outputRange: [slideDirection * 28, 0],
   });
-  const contentOpacity = slideProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
+  const contentOpacity = slideProgress.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] });
 
   return (
     <ScreenContainer contentStyle={styles.screen} topPadding={12} bottomPadding={12} horizontalPadding={24}>

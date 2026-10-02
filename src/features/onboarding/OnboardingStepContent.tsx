@@ -14,8 +14,8 @@ import { isUsernameAvailable, isUsernameCheckPending, type useUsernameAvailabili
 type Availability = ReturnType<typeof useUsernameAvailability>;
 
 export const genderOptions: { value: Gender; label: string; description: string }[] = [
-  { value: 'female', label: 'Kadın', description: 'Kadın olarak tanımlıyorum' },
   { value: 'male', label: 'Erkek', description: 'Erkek olarak tanımlıyorum' },
+  { value: 'female', label: 'Kadın', description: 'Kadın olarak tanımlıyorum' },
   { value: 'other', label: 'Diğer', description: 'Farklı bir şekilde tanımlıyorum' },
 ];
 
@@ -272,12 +272,20 @@ export const PhotoStep = memo(function PhotoStep({
   }, [onChange]);
 
   const openCamera = useCallback(() => {
-    closeSourceSheet(() => { void choosePhoto('camera'); });
-  }, [choosePhoto, closeSourceSheet]);
+    if (isSourceSheetMounted) {
+      closeSourceSheet(() => { void choosePhoto('camera'); });
+      return;
+    }
+    void choosePhoto('camera');
+  }, [choosePhoto, closeSourceSheet, isSourceSheetMounted]);
 
   const openGallery = useCallback(() => {
-    closeSourceSheet(() => { void choosePhoto('library'); });
-  }, [choosePhoto, closeSourceSheet]);
+    if (isSourceSheetMounted) {
+      closeSourceSheet(() => { void choosePhoto('library'); });
+      return;
+    }
+    void choosePhoto('library');
+  }, [choosePhoto, closeSourceSheet, isSourceSheetMounted]);
 
   return (
     <View style={styles.stepContent}>
