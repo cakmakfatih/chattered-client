@@ -1,44 +1,31 @@
-import { useAuth, useClerk } from '@clerk/expo';
-import { useHostedAuth } from '@clerk/expo/hosted-auth';
+import { useAuth } from '@clerk/expo';
 import type { HostedAuthMode } from '@clerk/expo/hosted-auth';
-import { useState } from 'react';
+import { Redirect } from 'expo-router';
 import { Alert } from 'react-native';
 import { LoadingView } from '../../components/LoadingView';
-import { SignedInScreen } from '../../screens/SignedInScreen';
 import { WelcomeScreen } from '../../screens/WelcomeScreen';
+import { useAuthTransition } from './AuthTransitionProvider';
 
 export function ClerkAuthGate() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { signOut } = useClerk();
-  const { startHostedAuth } = useHostedAuth();
-  const [authMode, setAuthMode] = useState<HostedAuthMode | null>(null);
+  const { authenticate, isAuthenticating, isSigningOut } = useAuthTransition();
 
   const openAuth = async (mode: HostedAuthMode) => {
-    if (authMode) return;
-    setAuthMode(mode);
+    if (isAuthenticating || isSigningOut) return;
     try {
-      await startHostedAuth({ mode });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Lütfen bağlantınızı kontrol edip tekrar deneyin.';
-      Alert.alert('Giriş açılamadı', message);
-    } finally {
-      setAuthMode(null);
+      await authenticate(mode);
+    } catch {
+      Alert.alert('Giriş açılamadı', 'Giriş işlemi tamamlanamadı. Lütfen tekrar deneyin.');
     }
   };
 
-  if (!isLoaded) return <LoadingView />;
+  if (!isLoaded || isAuthenticating || isSigningOut) return <LoadingView />;
 
-  if (isSignedIn) {
-    return (
-      <SignedInScreen
-        onSignOut={() => { void signOut(); }}
-      />
-    );
-  }
+  if (isSignedIn) return <Redirect href="/" />;
 
   return (
     <WelcomeScreen
-      isBusy={authMode !== null}
+      isBusy={isAuthenticating}
       onSignUp={() => { void openAuth('sign-up'); }}
       onSignIn={() => { void openAuth('sign-in'); }}
     />

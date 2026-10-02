@@ -1,7 +1,9 @@
-import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../components/AppText';
+import { AppPressable } from '../components/AppPressable';
 import { BrandMark } from '../components/BrandMark';
+import { ButtonLabel } from '../components/ButtonLabel';
 import { ChatIllustration } from '../components/ChatIllustration';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { colors } from '../theme/colors';
@@ -21,15 +23,15 @@ export function SignedInScreen({ onSignOut }: SignedInScreenProps) {
     <ScreenContainer contentStyle={styles.content} topPadding={12} bottomPadding={20}>
       <View style={styles.header}>
         <BrandMark />
-        <Pressable
+        <AppPressable
           accessibilityRole="button"
           accessibilityLabel="Çıkış yap"
           onPress={onSignOut}
           hitSlop={10}
-          style={({ pressed }) => [styles.signOutButton, pressed && styles.pressed]}
+          style={styles.signOutButton}
         >
-          <AppText style={styles.signOutText}>Çıkış</AppText>
-        </Pressable>
+          <ButtonLabel style={styles.signOutText}>Çıkış yap</ButtonLabel>
+        </AppPressable>
       </View>
 
       <View style={[styles.sectionHeading, compact && styles.sectionHeadingCompact]}>
@@ -53,7 +55,6 @@ const styles = StyleSheet.create({
   header: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   signOutButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
   signOutText: { color: colors.muted, fontSize: 14, fontWeight: '500' },
-  pressed: { opacity: 0.6 },
   sectionHeading: { marginTop: 36 },
   sectionHeadingCompact: { marginTop: 24 },
   title: { color: colors.ink, fontSize: 29, lineHeight: 36, letterSpacing: -0.7, fontWeight: '600' },
