@@ -1,15 +1,14 @@
-import { useAuth, useClerk } from '@clerk/expo';
+import { useAuth } from '@clerk/expo';
 import { useHostedAuth } from '@clerk/expo/hosted-auth';
 import type { HostedAuthMode } from '@clerk/expo/hosted-auth';
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import { Alert } from 'react-native';
 import { LoadingView } from '../../components/LoadingView';
-import { SignedInScreen } from '../../screens/SignedInScreen';
 import { WelcomeScreen } from '../../screens/WelcomeScreen';
 
 export function ClerkAuthGate() {
   const { isLoaded, isSignedIn } = useAuth();
-  const { signOut } = useClerk();
   const { startHostedAuth } = useHostedAuth();
   const [authMode, setAuthMode] = useState<HostedAuthMode | null>(null);
 
@@ -28,13 +27,7 @@ export function ClerkAuthGate() {
 
   if (!isLoaded) return <LoadingView />;
 
-  if (isSignedIn) {
-    return (
-      <SignedInScreen
-        onSignOut={() => { void signOut(); }}
-      />
-    );
-  }
+  if (isSignedIn) return <Redirect href="/(tabs)" />;
 
   return (
     <WelcomeScreen
