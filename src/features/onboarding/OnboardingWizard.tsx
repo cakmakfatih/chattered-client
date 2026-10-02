@@ -242,6 +242,7 @@ export function OnboardingWizard() {
           {step === 3 ? (
             <PhotoStep
               photo={draft.photo}
+              errorMessage={fieldErrors.photo}
               onChange={updatePhoto}
             />
           ) : null}

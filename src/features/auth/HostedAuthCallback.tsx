@@ -9,9 +9,11 @@ export function HostedAuthCallback() {
   const { state } = useRegistrationStatus();
   const { isAuthenticating } = useAuthTransition();
 
-  if (!isLoaded || !isSignedIn || isAuthenticating || state.status === 'loading') {
+  if (!isLoaded || isAuthenticating || state.status === 'loading') {
     return <LoadingView />;
   }
+
+  if (!isSignedIn) return <Redirect href="/welcome" />;
 
   return <Redirect href="/" />;
 }

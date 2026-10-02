@@ -5,7 +5,6 @@ type GetSessionToken = () => Promise<string | null>;
 type ApiErrorBody = {
   error?: {
     code?: string;
-    message?: string;
     field?: string;
     details?: unknown;
   };
@@ -83,7 +82,7 @@ async function request<TResponse>(
       );
     }
     throw new ApiRequestError(
-      apiError?.error?.message ?? 'İstek tamamlanamadı. Lütfen tekrar dene.',
+      getUserFacingApiErrorMessage(response.status, apiError?.error?.code),
       response.status,
       apiError?.error?.code,
       apiError?.error?.field,
@@ -92,6 +91,16 @@ async function request<TResponse>(
   }
 
   return payload as TResponse;
+}
+
+function getUserFacingApiErrorMessage(status: number, code?: string): string {
+  if (status === 404) return 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
+  if (status >= 500) return 'İşlem şu anda tamamlanamıyor. Lütfen daha sonra tekrar deneyin.';
+  if (code === 'username_taken') return 'Bu kullanıcı adı kullanımda.';
+  if (code?.startsWith('invalid_') || code === 'unexpected_field') {
+    return 'Bilgileri kontrol edip tekrar deneyin.';
+  }
+  return 'İşlem tamamlanamadı. Lütfen tekrar deneyin.';
 }
 
 function asApiErrorBody(value: unknown): ApiErrorBody | null {

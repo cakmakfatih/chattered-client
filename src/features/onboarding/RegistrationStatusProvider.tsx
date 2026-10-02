@@ -58,12 +58,6 @@ export function RegistrationStatusProvider({ children }: { children: ReactNode }
       if (currentRequestId === requestId.current) setStoredState(nextState);
       return nextState;
     } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 404) {
-        const nextState: RegistrationState = { status: 'incomplete', userId, sessionId };
-        if (currentRequestId === requestId.current) setStoredState(nextState);
-        return nextState;
-      }
-
       const nextState: RegistrationState = {
         status: 'error',
         userId,

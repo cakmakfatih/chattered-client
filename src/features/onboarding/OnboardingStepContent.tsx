@@ -159,9 +159,11 @@ export const BioStep = memo(function BioStep({
 
 export const PhotoStep = memo(function PhotoStep({
   photo,
+  errorMessage,
   onChange,
 }: {
   photo: SelectedPhoto | null;
+  errorMessage?: string;
   onChange: (photo: SelectedPhoto | null) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -277,8 +279,8 @@ export const PhotoStep = memo(function PhotoStep({
           onPress={openGallery}
         />
       </View>
-      {selectionError || metadataError ? (
-        <AppText style={[styles.helperText, styles.errorText]}>{selectionError ?? metadataError}</AppText>
+      {errorMessage || selectionError || metadataError ? (
+        <AppText style={[styles.helperText, styles.errorText]}>{errorMessage ?? selectionError ?? metadataError}</AppText>
       ) : null}
 
       <Modal
