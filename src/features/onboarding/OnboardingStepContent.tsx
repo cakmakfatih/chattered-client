@@ -1,5 +1,5 @@
-import { memo, useCallback, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Image, Linking, Modal, StyleSheet, TextInput, View } from 'react-native';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, Animated, Image, Linking, Modal, StyleSheet, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Camera, Check, ChevronRight, ImagePlus, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,7 @@ import { AppText } from '../../components/AppText';
 import { ButtonLabel } from '../../components/ButtonLabel';
 import { colors } from '../../theme/colors';
 import type { Gender, SelectedPhoto } from './types';
-import { getBioError, getPhotoMetadataError } from './validation';
+import { getBioError, getPhotoMetadataError, maxBioCodePoints, maxUsernameCharacters } from './validation';
 import { isUsernameAvailable, isUsernameCheckPending, type useUsernameAvailability } from './useUsernameAvailability';
 
 type Availability = ReturnType<typeof useUsernameAvailability>;
@@ -46,7 +46,7 @@ export const UsernameStep = memo(function UsernameStep({
         ? 'Bu kullanıcı adı kullanımda.'
         : checking
           ? 'Kullanıcı adı kontrol ediliyor…'
-          : '3–30 karakter; küçük harf, rakam ve alt çizgi kullan.';
+          : `3–${maxUsernameCharacters} karakter; küçük harf, rakam ve alt çizgi kullan.`;
 
   return (
     <View style={styles.stepContent}>
@@ -58,7 +58,7 @@ export const UsernameStep = memo(function UsernameStep({
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="username"
-          maxLength={30}
+          maxLength={maxUsernameCharacters}
           onChangeText={onChange}
           placeholder="ornek_kullanici"
           placeholderTextColor={colors.muted}
@@ -135,11 +135,11 @@ export const BioStep = memo(function BioStep({
 
   return (
     <View style={styles.stepContent}>
-      <AppText style={styles.fieldLabel}>Seni anlatan birkaç şey</AppText>
+      <AppText style={styles.fieldLabel}>Biyografin</AppText>
       <TextInput
         accessibilityLabel="Biyografi"
         multiline
-        onChangeText={onChange}
+        onChangeText={(value) => onChange(Array.from(value).slice(0, maxBioCodePoints).join(''))}
         placeholder="İlgi alanların, sevdiğin şeyler veya seni anlatan birkaç kelime…"
         placeholderTextColor={colors.muted}
         selectionColor={colors.primary}
@@ -151,7 +151,7 @@ export const BioStep = memo(function BioStep({
         <AppText style={[styles.helperText, localError && styles.errorText]}>
           {localError ?? 'İstersen boş bırakabilirsin.'}
         </AppText>
-        <AppText style={[styles.characterCount, characterCount > 750 && styles.errorText]}>{characterCount}/750</AppText>
+        <AppText style={styles.characterCount}>{characterCount}/{maxBioCodePoints}</AppText>
       </View>
     </View>
   );
@@ -169,9 +169,49 @@ export const PhotoStep = memo(function PhotoStep({
   const insets = useSafeAreaInsets();
   const [pickerSource, setPickerSource] = useState<'camera' | 'library' | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [isSourceSheetMounted, setSourceSheetMounted] = useState(false);
   const [isSourceSheetVisible, setSourceSheetVisible] = useState(false);
   const [isPreviewVisible, setPreviewVisible] = useState(false);
+  const [backdropOpacity] = useState(() => new Animated.Value(0));
+  const [sheetTranslateY] = useState(() => new Animated.Value(280));
+  const onSourceSheetClosed = useRef<(() => void) | null>(null);
   const metadataError = photo ? getPhotoMetadataError(photo) : null;
+
+  const openSourceSheet = useCallback(() => {
+    backdropOpacity.setValue(0);
+    sheetTranslateY.setValue(280);
+    onSourceSheetClosed.current = null;
+    setSourceSheetMounted(true);
+    setSourceSheetVisible(true);
+  }, [backdropOpacity, sheetTranslateY]);
+
+  const closeSourceSheet = useCallback((onClosed?: () => void) => {
+    onSourceSheetClosed.current = onClosed ?? null;
+    setSourceSheetVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isSourceSheetMounted) return undefined;
+
+    const animation = Animated.parallel(isSourceSheetVisible
+      ? [
+        Animated.timing(backdropOpacity, { toValue: 1, duration: 120, useNativeDriver: true }),
+        Animated.timing(sheetTranslateY, { toValue: 0, duration: 240, useNativeDriver: true }),
+      ]
+      : [
+        Animated.timing(backdropOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
+        Animated.timing(sheetTranslateY, { toValue: 280, duration: 220, useNativeDriver: true }),
+      ]);
+
+    animation.start(({ finished }) => {
+      if (!finished || isSourceSheetVisible) return;
+      setSourceSheetMounted(false);
+      onSourceSheetClosed.current?.();
+      onSourceSheetClosed.current = null;
+    });
+
+    return () => animation.stop();
+  }, [backdropOpacity, isSourceSheetMounted, isSourceSheetVisible, sheetTranslateY]);
 
   const handlePermissionDenied = useCallback((permission: ImagePicker.PermissionResponse, sourceName: string) => {
     const message = `${sourceName} erişim izni verilmedi. İzin vermeden de bu adımı atlayabilirsin.`;
@@ -232,14 +272,12 @@ export const PhotoStep = memo(function PhotoStep({
   }, [onChange]);
 
   const openCamera = useCallback(() => {
-    setSourceSheetVisible(false);
-    void choosePhoto('camera');
-  }, [choosePhoto]);
+    closeSourceSheet(() => { void choosePhoto('camera'); });
+  }, [choosePhoto, closeSourceSheet]);
 
   const openGallery = useCallback(() => {
-    setSourceSheetVisible(false);
-    void choosePhoto('library');
-  }, [choosePhoto]);
+    closeSourceSheet(() => { void choosePhoto('library'); });
+  }, [choosePhoto, closeSourceSheet]);
 
   return (
     <View style={styles.stepContent}>
@@ -256,7 +294,7 @@ export const PhotoStep = memo(function PhotoStep({
         <AppPressable
           accessibilityRole="button"
           accessibilityLabel="Profil fotoğrafı ekle"
-          onPress={() => setSourceSheetVisible(true)}
+          onPress={openSourceSheet}
           style={styles.photoPlaceholder}
         >
           <ImagePlus size={32} color={colors.muted} />
@@ -284,16 +322,17 @@ export const PhotoStep = memo(function PhotoStep({
       ) : null}
 
       <Modal
-        animationType="slide"
+        animationType="none"
         transparent
-        visible={isSourceSheetVisible}
+        visible={isSourceSheetMounted}
         statusBarTranslucent
         navigationBarTranslucent
-        onRequestClose={() => setSourceSheetVisible(false)}
+        onRequestClose={() => closeSourceSheet()}
       >
         <View style={styles.sheetModal}>
-          <AppPressable accessibilityRole="button" accessibilityLabel="Fotoğraf seçeneklerini kapat" onPress={() => setSourceSheetVisible(false)} style={styles.sheetBackdrop} />
-          <View style={[styles.sourceSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <Animated.View pointerEvents="none" style={[styles.sheetBackdrop, { opacity: backdropOpacity }]} />
+          <AppPressable accessibilityRole="button" accessibilityLabel="Fotoğraf seçeneklerini kapat" onPress={() => closeSourceSheet()} style={styles.sheetDismissArea} />
+          <Animated.View style={[styles.sourceSheet, { paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY: sheetTranslateY }] }]}>
             <View style={styles.sheetHandle} />
             <AppText style={styles.sheetTitle}>Profil fotoğrafı ekle</AppText>
             <AppPressable accessibilityRole="button" onPress={openCamera} style={styles.sheetOption}>
@@ -304,7 +343,7 @@ export const PhotoStep = memo(function PhotoStep({
               <View style={styles.sheetOptionIcon}><ImagePlus size={21} color={colors.primary} /></View>
               <AppText style={styles.sheetOptionText}>Galeri</AppText>
             </AppPressable>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -386,7 +425,7 @@ export const ReviewStep = memo(function ReviewStep({
     <View style={styles.reviewList}>
       <ReviewRow label="Kullanıcı adı" value={`@${username}`} onPress={() => onEdit(0)} />
       <ReviewRow label="Cinsiyet" value={genderLabel} onPress={() => onEdit(1)} />
-      <ReviewRow label="Biyografi" value={bio || 'Eklenmedi'} onPress={() => onEdit(2)} />
+      <ReviewRow label="Biyografi" value={bio ? 'Eklendi' : 'Eklenmedi'} onPress={() => onEdit(2)} />
       <AppPressable accessibilityRole="button" accessibilityLabel="Profil fotoğrafı bilgisini düzenle" onPress={() => onEdit(3)} style={styles.reviewRow}>
         <AppText style={styles.reviewLabel}>Profil fotoğrafı</AppText>
         <View style={styles.reviewValueGroup}>
@@ -446,6 +485,7 @@ const styles = StyleSheet.create({
   pickerButtonText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   sheetModal: { flex: 1, justifyContent: 'flex-end' },
   sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(32, 33, 36, 0.42)' },
+  sheetDismissArea: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   sourceSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.surface, paddingTop: 10, paddingHorizontal: 20 },
   sheetHandle: { width: 36, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: '#DADCE0', marginBottom: 18 },
   sheetTitle: { color: colors.ink, fontSize: 19, fontWeight: '600', marginBottom: 10 },

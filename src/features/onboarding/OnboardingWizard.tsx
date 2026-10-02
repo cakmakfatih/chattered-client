@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { router } from 'expo-router';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { AlertCircle, ArrowLeft, ArrowRight, Check } from 'lucide-react-native';
 import { AppText } from '../../components/AppText';
 import { AppPressable } from '../../components/AppPressable';
@@ -15,14 +15,14 @@ import { useRegistrationStatus } from './RegistrationStatusProvider';
 import type { Gender, OnboardingDraft, OnboardingField, OnboardingFieldErrors, SelectedPhoto } from './types';
 import { emptyOnboardingDraft, normalizeBio, toPhotoMetadata } from './types';
 import { useUsernameAvailability } from './useUsernameAvailability';
-import { getBioError, getGenderError, getPhotoMetadataError, getUsernameFormatError } from './validation';
+import { getBioError, getGenderError, getPhotoMetadataError, getUsernameFormatError, maxBioCodePoints, maxUsernameCharacters } from './validation';
 import { BioStep, genderLabels, GenderStep, PhotoStep, ReviewStep, UsernameStep } from './OnboardingStepContent';
 
 const stepCopy = [
   { title: 'Bir kullanıcı adı seç', description: 'Anonim olarak sana yazanlar bu adı görecek.' },
-  { title: 'Kendini tanımla', description: 'Sana daha uygun eşleşmeler sunabilmek için soruyoruz.' },
-  { title: 'Biraz kendinden bahset', description: 'İlgi alanlarından bahset; ortak noktalarınız olan kişiler seni burada bulabilir.' },
-  { title: 'Bir fotoğraf ekle', description: 'İnsanlar ana sayfada seni böyle görüntüleyecek.' },
+  { title: 'Cinsiyetin', description: 'Görünürlük açık ise anonim eşleştirmelerde ve aramalarda kullanılır.' },
+  { title: 'Biraz kendinden bahset', description: 'Kısaca kendini tanıt; bir biyografi, ortak ilgi alanların olan kişileri bulmanı kolaylaştırır.' },
+  { title: 'Bir fotoğraf ekle', description: 'Profil fotoğrafı olan kullanıcılar daha çok mesaj alırlar.' },
   { title: 'Her şey hazır', description: 'Bilgilerini kontrol et ve Chattered’a katıl.' },
 ];
 
@@ -38,6 +38,9 @@ export function OnboardingWizard() {
   const [draft, setDraft] = useState<OnboardingDraft>(emptyOnboardingDraft);
   const [usernameRevision, setUsernameRevision] = useState(0);
   const [step, setStep] = useState(0);
+  const [slideProgress] = useState(() => new Animated.Value(1));
+  const [slideDirection, setSlideDirection] = useState<1 | -1>(1);
+  const [isStepAnimating, setIsStepAnimating] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<OnboardingFieldErrors>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -56,25 +59,43 @@ export function OnboardingWizard() {
   const updateGender = useCallback((gender: Gender) => updateDraft('gender', gender), [updateDraft]);
   const updateBio = useCallback((bio: string) => updateDraft('bio', bio), [updateDraft]);
   const updatePhoto = useCallback((photo: SelectedPhoto | null) => updateDraft('photo', photo), [updateDraft]);
+
+  const goToStep = useCallback((nextStep: number) => {
+    if (nextStep === step || isStepAnimating) return;
+
+    setSlideDirection(nextStep > step ? 1 : -1);
+    setIsStepAnimating(true);
+    slideProgress.setValue(0);
+    setStep(nextStep);
+    Animated.timing(slideProgress, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setIsStepAnimating(false);
+    });
+  }, [isStepAnimating, slideProgress, step]);
+
   const editReviewStep = useCallback((reviewStep: number) => {
     setActionError(null);
-    setStep(reviewStep);
-  }, []);
+    goToStep(reviewStep);
+  }, [goToStep]);
 
   const canContinue = useMemo(() => {
-    if (isBusy || isSigningOut) return false;
+    if (isBusy || isSigningOut || isStepAnimating) return false;
     if (step === 0) return availability.status === 'available' && !fieldErrors.username;
     if (step === 1) return draft.gender !== null && !fieldErrors.gender;
     if (step === 2) return getBioError(draft.bio) === null && !fieldErrors.bio;
     if (step === 3) return (!draft.photo || getPhotoMetadataError(draft.photo) === null) && !fieldErrors.photo;
     return true;
-  }, [availability.status, draft.bio, draft.gender, draft.photo, fieldErrors, isBusy, isSigningOut, step]);
+  }, [availability.status, draft.bio, draft.gender, draft.photo, fieldErrors, isBusy, isSigningOut, isStepAnimating, step]);
 
   const goBack = useCallback(() => {
-    if (isBusy || isSigningOut) return;
+    if (isBusy || isSigningOut || isStepAnimating) return;
     setActionError(null);
     if (step > 0) {
-      setStep((current) => current - 1);
+      goToStep(step - 1);
       return;
     }
 
@@ -82,7 +103,7 @@ export function OnboardingWizard() {
       .catch(() => {
         setActionError('Oturum kapatılamadı. Tekrar dene.');
       });
-  }, [endSession, isBusy, isSigningOut, step]);
+  }, [endSession, goToStep, isBusy, isSigningOut, isStepAnimating, step]);
 
   const applyApiFieldErrors = useCallback((error: ApiRequestError): boolean => {
     const fieldEntries = getApiFieldEntries(error);
@@ -99,10 +120,10 @@ export function OnboardingWizard() {
     const firstField = mappedErrors.reduce((first, current) => (
       stepOrder[current.field] < stepOrder[first.field] ? current : first
     )).field;
-    setStep(stepOrder[firstField]);
+    goToStep(stepOrder[firstField]);
     setActionError(null);
     return true;
-  }, []);
+  }, [goToStep]);
 
   const validateCurrentStep = useCallback(async () => {
     setIsBusy(true);
@@ -126,14 +147,14 @@ export function OnboardingWizard() {
         await validatePhoto(toPhotoMetadata(draft.photo), getSessionToken);
       }
 
-      setStep((current) => Math.min(stepCopy.length - 1, current + 1));
+      goToStep(Math.min(stepCopy.length - 1, step + 1));
     } catch (error) {
       if (error instanceof ApiRequestError && applyApiFieldErrors(error)) return;
       setActionError(getApiActionMessage(error));
     } finally {
       setIsBusy(false);
     }
-  }, [applyApiFieldErrors, draft.bio, draft.photo, getSessionToken, step]);
+  }, [applyApiFieldErrors, draft.bio, draft.photo, getSessionToken, goToStep, step]);
 
   const submitRegistration = useCallback(async () => {
     const localErrors: OnboardingFieldErrors = {};
@@ -149,7 +170,7 @@ export function OnboardingWizard() {
       setFieldErrors((current) => ({ ...current, ...localErrors }));
       const firstField = (Object.keys(localErrors) as OnboardingField[])
         .reduce((first, current) => stepOrder[current] < stepOrder[first] ? current : first);
-      setStep(stepOrder[firstField]);
+      goToStep(stepOrder[firstField]);
       return;
     }
 
@@ -184,7 +205,7 @@ export function OnboardingWizard() {
     } finally {
       setIsBusy(false);
     }
-  }, [applyApiFieldErrors, draft, getSessionToken, markComplete, refresh]);
+  }, [applyApiFieldErrors, draft, getSessionToken, goToStep, markComplete, refresh]);
 
   const continueToNextStep = useCallback(() => {
     if (!canContinue) return;
@@ -197,15 +218,20 @@ export function OnboardingWizard() {
       return;
     }
     setActionError(null);
-    setStep((current) => current + 1);
-  }, [canContinue, step, submitRegistration, validateCurrentStep]);
+    goToStep(step + 1);
+  }, [canContinue, goToStep, step, submitRegistration, validateCurrentStep]);
 
   const copy = stepCopy[step];
   const usernameFormatError = draft.username ? getUsernameFormatError(draft.username) : null;
+  const contentTranslateX = slideProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [slideDirection * 28, 0],
+  });
+  const contentOpacity = slideProgress.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] });
 
   return (
     <ScreenContainer contentStyle={styles.screen} topPadding={12} bottomPadding={12} horizontalPadding={24}>
-      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.keyboardView} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.header}>
           <BrandMark />
           <AppText style={styles.stepCounter}>Adım {step + 1} / {stepCopy.length}</AppText>
@@ -213,7 +239,14 @@ export function OnboardingWizard() {
         <View accessibilityLabel={`Kayıt adımı ${step + 1} / ${stepCopy.length}`} style={styles.progressTrack}>
           {stepCopy.map((item, index) => <View key={item.title} style={[styles.progressSegment, index <= step && styles.progressSegmentActive]} />)}
         </View>
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          style={styles.contentViewport}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          <Animated.View style={[styles.transitionContent, { opacity: contentOpacity, transform: [{ translateX: contentTranslateX }] }]}>
           <AppText style={styles.title}>{copy.title}</AppText>
           <AppText style={styles.description}>{copy.description}</AppText>
 
@@ -262,10 +295,11 @@ export function OnboardingWizard() {
               <AppText style={styles.actionErrorText}>{actionError}</AppText>
             </View>
           ) : null}
+          </Animated.View>
         </ScrollView>
 
         <View style={styles.actions}>
-          <AppPressable accessibilityRole="button" disabled={isBusy || isSigningOut} onPress={goBack} style={[styles.backButton, (isBusy || isSigningOut) && styles.disabledButton]}>
+          <AppPressable accessibilityRole="button" disabled={isBusy || isSigningOut || isStepAnimating} onPress={goBack} style={[styles.backButton, (isBusy || isSigningOut || isStepAnimating) && styles.disabledButton]}>
             {isSigningOut ? <ActivityIndicator size="small" color={colors.muted} /> : <ArrowLeft size={18} color={colors.muted} />}
             <ButtonLabel style={styles.backLabel}>{isSigningOut ? 'Çıkılıyor…' : 'Geri'}</ButtonLabel>
           </AppPressable>
@@ -330,9 +364,9 @@ function mapApiField(field?: string, code?: string): OnboardingField | null {
 function getApiFieldMessage(error: ApiRequestError, field: OnboardingField, code?: string): string {
   const errorCode = code ?? error.code;
   if (errorCode === 'username_taken') return 'Bu kullanıcı adı az önce alınmış. Başka bir ad seç.';
-  if (errorCode === 'invalid_username') return 'Kullanıcı adı biçimini kontrol et.';
+  if (errorCode === 'invalid_username') return `Kullanıcı adı 3–${maxUsernameCharacters} karakter olmalı; küçük harfle başlamalı, yalnızca küçük harf, rakam ve alt çizgi kullanılmalı.`;
   if (errorCode === 'invalid_gender') return 'Bir cinsiyet seçeneği belirle.';
-  if (errorCode === 'invalid_bio') return 'Biyografi biçimini kontrol et. En fazla 750 karakter kullanabilirsin.';
+  if (errorCode === 'invalid_bio') return `Biyografi biçimini kontrol et. En fazla ${maxBioCodePoints} karakter kullanabilirsin.`;
   if (errorCode === 'invalid_photo' && error.field === 'photo.size_bytes') return 'Fotoğraf en fazla 10 MiB olabilir.';
   if (errorCode === 'invalid_photo') return 'Fotoğraf JPG, PNG veya HEIC olmalı ve dosya bilgileri eşleşmeli.';
   return field === 'photo' ? 'Fotoğraf bilgileri geçerli değil.' : 'Bu alanı kontrol edip tekrar dene.';
@@ -352,7 +386,9 @@ const styles = StyleSheet.create({
   progressTrack: { flexDirection: 'row', gap: 6, marginTop: 18 },
   progressSegment: { flex: 1, height: 3, borderRadius: 2, backgroundColor: '#E8EAED' },
   progressSegmentActive: { backgroundColor: colors.primary },
+  contentViewport: { flex: 1, overflow: 'hidden' },
   scrollContent: { flexGrow: 1, paddingTop: 30, paddingBottom: 22 },
+  transitionContent: { flexGrow: 1 },
   title: { color: colors.ink, fontSize: 28, lineHeight: 34, letterSpacing: -0.6, fontWeight: '600' },
   description: { color: colors.muted, fontSize: 14, lineHeight: 20, marginTop: 8 },
   actionError: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, borderRadius: 12, backgroundColor: colors.errorSurface, padding: 12, marginTop: 18 },

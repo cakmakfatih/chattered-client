@@ -139,7 +139,31 @@ export async function getRegistrationStatus(getToken: GetSessionToken): Promise<
 }
 
 export async function checkUsernameAvailability(username: string, getToken: GetSessionToken): Promise<boolean> {
-  const result = await request<{ available: boolean }>('/onboarding/username/check', getToken, { username });
+  const retryDelays = [250, 500, 1000];
+  let result: { available: boolean };
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      result = await request<{ available: boolean }>('/onboarding/username/check', getToken, { username });
+      break;
+    } catch (error) {
+      const retryDelay = retryDelays[attempt];
+      if (!(error instanceof ApiRequestError) || error.status !== 401 || retryDelay === undefined) {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          throw new ApiRequestError(
+            'Kullanıcı adı şu an kontrol edilemedi. Lütfen tekrar deneyin.',
+            error.status,
+            error.code,
+            error.field,
+            error.details,
+          );
+        }
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+
   if (typeof result?.available !== 'boolean') throw new Error('Kullanıcı adı kontrol sonucu okunamadı.');
   return result.available;
 }

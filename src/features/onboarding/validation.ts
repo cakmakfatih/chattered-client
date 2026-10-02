@@ -1,12 +1,14 @@
 import * as v from 'valibot';
 import type { Gender, PhotoMetadata } from './types';
 
-const maxBioCodePoints = 750;
+export const maxBioCodePoints = 300;
+export const maxUsernameCharacters = 15;
 const maxPhotoBytes = 10 * 1024 * 1024;
+const usernamePattern = /^[a-z][a-z0-9_]*$/;
 
 const usernameSchema = v.pipe(
   v.string(),
-  v.check((username) => /^[a-z][a-z0-9_]{2,29}$/.test(username), '3–30 karakter; küçük harfle başlamalı, yalnızca küçük harf, rakam ve alt çizgi kullanılmalı.'),
+  v.check((username) => username.length >= 3 && username.length <= maxUsernameCharacters && usernamePattern.test(username), `3–${maxUsernameCharacters} karakter; küçük harfle başlamalı, yalnızca küçük harf, rakam ve alt çizgi kullanılmalı.`),
 );
 
 const genderSchema = v.pipe(
@@ -16,7 +18,7 @@ const genderSchema = v.pipe(
 
 const bioSchema = v.pipe(
   v.string(),
-  v.check((bio) => Array.from(bio).length <= maxBioCodePoints, 'Biyografi en fazla 750 karakter olabilir.'),
+  v.check((bio) => Array.from(bio).length <= maxBioCodePoints, `Biyografi en fazla ${maxBioCodePoints} karakter olabilir.`),
   v.check((bio) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u.test(bio), 'Biyografide desteklenmeyen kontrol karakterleri var.'),
 );
 
@@ -63,7 +65,7 @@ function firstIssue<TSchema extends v.BaseSchema<unknown, unknown, v.BaseIssue<u
 
 export function getUsernameFormatError(username: string): string | null {
   if (username.length < 3) return 'Kullanıcı adı en az 3 karakter olmalı.';
-  if (username.length > 30) return 'Kullanıcı adı en fazla 30 karakter olabilir.';
+  if (username.length > maxUsernameCharacters) return `Kullanıcı adı en fazla ${maxUsernameCharacters} karakter olabilir.`;
   return firstIssue(usernameSchema, username);
 }
 
