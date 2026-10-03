@@ -388,6 +388,7 @@ web-build/
 /android/
 
 # Local environment files
+.env.dev
 .env.*
 !.env.example
 .env*.local

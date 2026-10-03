@@ -11,7 +11,7 @@ export function MissingClerkKeyScreen() {
         <View style={styles.message}>
           <AppText style={styles.title}>Clerk yapılandırması eksik</AppText>
           <AppText style={styles.description}>
-            mobile/.env.example dosyasını mobile/.env olarak kopyalayıp Clerk publishable key değerini ekleyin.
+            mobile/.env.example dosyasını mobile/.env.dev olarak kopyalayıp Clerk publishable key değerini ekleyin.
           </AppText>
         </View>
     </ScreenContainer>
