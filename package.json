@@ -31,11 +31,12 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "node scripts/run-expo-with-env-dev.cjs start",
-    "android": "node scripts/run-expo-with-env-dev.cjs start --android",
-    "ios": "node scripts/run-expo-with-env-dev.cjs start --ios",
-    "web": "node scripts/run-expo-with-env-dev.cjs start --web",
-    "lint": "node scripts/run-expo-with-env-dev.cjs lint"
+    "start": "node scripts/run-expo-with-env.cjs .env.dev start",
+    "start:local": "node scripts/run-expo-with-env.cjs .env.local start --lan --go",
+    "android": "node scripts/run-expo-with-env.cjs .env.dev start --android",
+    "ios": "node scripts/run-expo-with-env.cjs .env.dev start --ios",
+    "web": "node scripts/run-expo-with-env.cjs .env.dev start --web",
+    "lint": "node scripts/run-expo-with-env.cjs .env.dev lint"
   },
   "private": true
 }
