@@ -46,3 +46,28 @@ Docs: https://docs.expo.dev/eas/index.md
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
 - Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+
+## Repository Scope
+
+- Keep all changes for this conversation within the `mobile/` repository.
+- Redirect root-level, background, and server work to their corresponding conversations; do not modify those files here.
+
+## Git Operations
+
+- Do not perform any Git operation unless the user explicitly requests it. This includes read-only inspection commands such as `status`, `log`, and `diff`, as well as `fetch`, `checkout`, `branch`, `merge`, `commit`, `push`, and similar operations.
+- Commit only when the user explicitly asks. Never commit or push without explicit user instruction.
+- When the user authorizes Git work, follow Git Flow principles.
+- Write all commit messages in English.
+
+## Language and Naming
+
+- Write all documentation in English, including README files and other document files.
+- Use English for identifiers and names, including variables, functions, types, files, and resources. Follow the project's established language conventions for casing and formatting.
+- Use Turkish only for user-facing language inside the application. Do not use Turkish for identifiers, technical names, documentation, or commit messages.
+- Apply Clean Code Architecture naming logic: choose names that clearly communicate meaning, action, responsibility, and architectural role while following existing project conventions.
+- Name functions clearly according to their action and responsibility.
+
+## Code Design
+
+- Keep functions short, focused, understandable, and limited to a cohesive responsibility.
+- Avoid excessive context and unrelated responsibilities. Apply judgment based on clarity and cohesion rather than a rigid line-count rule.
