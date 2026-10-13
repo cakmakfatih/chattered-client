@@ -11,7 +11,15 @@ import { ScreenContainer } from '../../components/ScreenContainer';
 import { Snackbar, type SnackbarNotice } from '../../components/Snackbar';
 import { colors } from '../../theme/colors';
 import { useAuthTransition } from '../auth/AuthTransitionProvider';
-import { ApiRequestError, completeRegistration, uploadProfilePhoto, validateBiography, validatePhoto } from './api';
+import {
+  ApiRequestError,
+  completeRegistration,
+  uploadProfilePhoto,
+  validateBiography,
+  validatePhoto,
+  type RegistrationProfile,
+} from './api';
+import { getOnboardingActionMessage, getOnboardingFieldErrors } from './onboardingApiErrors';
 import { useRegistrationStatus } from './RegistrationStatusProvider';
 import type { Gender, OnboardingDraft, OnboardingField, OnboardingFieldErrors, SelectedPhoto } from './types';
 import { emptyOnboardingDraft, normalizeBio, toPhotoMetadata } from './types';
@@ -23,10 +31,9 @@ import {
   getSelectedPhotoError,
   getUsernameFormatError,
   hasRequiredPhotoDimensions,
-  maxBioCodePoints,
-  maxUsernameCharacters,
 } from './validation';
-import { BioStep, genderLabels, GenderStep, PhotoStep, ReviewStep, UsernameStep } from './OnboardingStepContent';
+import { BioStep, genderLabels, GenderStep, ReviewStep, UsernameStep } from './OnboardingStepContent';
+import { PhotoStep } from './PhotoStep';
 
 const stepCopy = [
   { title: 'Bir kullanıcı adı seç', description: 'Anonim olarak sana yazanlar bu adı görecek.' },
@@ -98,17 +105,19 @@ export function OnboardingWizard() {
     goToStep(reviewStep);
   }, [goToStep]);
 
+  const isInteractionLocked = isBusy || isSigningOut || isStepAnimating;
+
   const canContinue = useMemo(() => {
-    if (isBusy || isSigningOut || isStepAnimating) return false;
+    if (isInteractionLocked) return false;
     if (step === 0) return availability.status === 'available' && !fieldErrors.username;
     if (step === 1) return draft.gender !== null && !fieldErrors.gender;
     if (step === 2) return getBioError(draft.bio) === null && !fieldErrors.bio;
     if (step === 3) return (!draft.photo || getSelectedPhotoError(draft.photo) === null) && !fieldErrors.photo;
     return true;
-  }, [availability.status, draft.bio, draft.gender, draft.photo, fieldErrors, isBusy, isSigningOut, isStepAnimating, step]);
+  }, [availability.status, draft.bio, draft.gender, draft.photo, fieldErrors, isInteractionLocked, step]);
 
   const goBack = useCallback(() => {
-    if (isBusy || isSigningOut || isStepAnimating) return;
+    if (isInteractionLocked) return;
     setActionError(null);
     if (step > 0) {
       goToStep(step - 1);
@@ -119,117 +128,104 @@ export function OnboardingWizard() {
       .catch(() => {
         setActionError('Oturum kapatılamadı. Tekrar dene.');
       });
-  }, [endSession, goToStep, isBusy, isSigningOut, isStepAnimating, step]);
+  }, [endSession, goToStep, isInteractionLocked, step]);
 
-  const applyApiFieldErrors = useCallback((error: ApiRequestError): boolean => {
-    const fieldEntries = getApiFieldEntries(error);
-    const mappedErrors = fieldEntries.flatMap((entry) => {
-      const field = mapApiField(entry.field, entry.code);
-      return field ? [{ field, message: getApiFieldMessage(error, field, entry.code) }] : [];
-    });
-    if (mappedErrors.length === 0) return false;
-
-    setFieldErrors((current) => ({
-      ...current,
-      ...Object.fromEntries(mappedErrors.map(({ field, message }) => [field, message])),
-    }));
-    const firstField = mappedErrors.reduce((first, current) => (
-      stepOrder[current.field] < stepOrder[first.field] ? current : first
-    )).field;
-    goToStep(stepOrder[firstField]);
-    setActionError(null);
-    return true;
+  const showFieldErrors = useCallback((errors: OnboardingFieldErrors) => {
+    setFieldErrors((current) => ({ ...current, ...errors }));
+    goToStep(getEarliestFieldStep(Object.keys(errors) as OnboardingField[]));
   }, [goToStep]);
 
-  const validateCurrentStep = useCallback(async () => {
-    setIsBusy(true);
+  const applyApiFieldErrors = useCallback((error: ApiRequestError): boolean => {
+    const apiFieldErrors = getOnboardingFieldErrors(error);
+    if (apiFieldErrors.length === 0) return false;
+
+    showFieldErrors(Object.fromEntries(apiFieldErrors.map(({ field, message }) => [field, message])));
     setActionError(null);
-    try {
-      if (step === 2) {
-        const bioError = getBioError(draft.bio);
-        if (bioError) {
-          setFieldErrors((current) => ({ ...current, bio: bioError }));
-          return;
-        }
-        await validateBiography(normalizeBio(draft.bio), getSessionToken);
-      }
+    return true;
+  }, [showFieldErrors]);
 
-      if (step === 3) {
-        const photoError = draft.photo ? getSelectedPhotoError(draft.photo) : null;
-        if (photoError) {
-          setFieldErrors((current) => ({ ...current, photo: photoError }));
-          return;
-        }
-        await validatePhoto(toPhotoMetadata(draft.photo), getSessionToken);
-      }
+  const handleActionError = useCallback((error: unknown) => {
+    if (error instanceof ApiRequestError && applyApiFieldErrors(error)) return;
+    setActionError(getOnboardingActionMessage(error));
+  }, [applyApiFieldErrors]);
 
-      goToStep(Math.min(stepCopy.length - 1, step + 1));
-    } catch (error) {
-      if (error instanceof ApiRequestError && applyApiFieldErrors(error)) return;
-      setActionError(getApiActionMessage(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }, [applyApiFieldErrors, draft.bio, draft.photo, getSessionToken, goToStep, step]);
+  const validateStepOnServer = useCallback(async () => {
+    if (step === 2) await validateBiography(normalizeBio(draft.bio), getSessionToken);
+    if (step === 3) await validatePhoto(toPhotoMetadata(draft.photo), getSessionToken);
+  }, [draft.bio, draft.photo, getSessionToken, step]);
 
-  const submitRegistration = useCallback(async () => {
-    // A photo that is not a square of at least the minimum size is never sent; the profile is created without it.
-    const photo = draft.photo && hasRequiredPhotoDimensions(draft.photo) ? draft.photo : null;
-    const localErrors: OnboardingFieldErrors = {};
-    const usernameError = getUsernameFormatError(draft.username);
-    const genderError = getGenderError(draft.gender);
-    const bioError = getBioError(draft.bio);
-    const photoError = photo ? getPhotoMetadataError(photo) : null;
-    if (usernameError) localErrors.username = usernameError;
-    if (genderError) localErrors.gender = genderError;
-    if (bioError) localErrors.bio = bioError;
-    if (photoError) localErrors.photo = photoError;
+  const validateCurrentStep = useCallback(async () => {
+    const localErrors = getStepFieldErrors(step, draft);
     if (Object.keys(localErrors).length > 0) {
       setFieldErrors((current) => ({ ...current, ...localErrors }));
-      const firstField = (Object.keys(localErrors) as OnboardingField[])
-        .reduce((first, current) => stepOrder[current] < stepOrder[first] ? current : first);
-      goToStep(stepOrder[firstField]);
       return;
     }
 
     setIsBusy(true);
     setActionError(null);
     try {
-      const selectedGender = draft.gender;
-      if (!selectedGender) throw new Error('Bir cinsiyet seçeneği belirle.');
-      if (photo) {
-        setIsUploadingPhoto(true);
-        await uploadProfilePhoto(photo, getSessionToken);
-        setIsUploadingPhoto(false);
-      }
-      const result = await completeRegistration({
-        username: draft.username,
-        gender: selectedGender,
-        bio: normalizeBio(draft.bio),
-        photo: toPhotoMetadata(photo),
-      }, getSessionToken);
-
-      if (!result.registration_complete || !result.user) {
-        throw new Error('Kayıt tamamlandı yanıtı geçersiz. Ana ekrana geçiş engellendi.');
-      }
-      markComplete(result.user);
-      router.replace('/');
+      await validateStepOnServer();
+      goToStep(Math.min(stepCopy.length - 1, step + 1));
     } catch (error) {
-      if (error instanceof ApiRequestError && error.code === 'profile_already_complete') {
-        const registration = await refresh();
-        if (registration.status === 'complete') {
-          markComplete(registration.profile);
-          router.replace('/');
-          return;
-        }
-      }
-      if (error instanceof ApiRequestError && applyApiFieldErrors(error)) return;
-      setActionError(getApiActionMessage(error));
+      handleActionError(error);
+    } finally {
+      setIsBusy(false);
+    }
+  }, [draft, goToStep, handleActionError, step, validateStepOnServer]);
+
+  const finishOnboarding = useCallback((profile: RegistrationProfile) => {
+    markComplete(profile);
+    router.replace('/');
+  }, [markComplete]);
+
+  const createProfile = useCallback(async (gender: Gender, photo: SelectedPhoto | null) => {
+    if (photo) {
+      setIsUploadingPhoto(true);
+      await uploadProfilePhoto(photo, getSessionToken);
+      setIsUploadingPhoto(false);
+    }
+    const result = await completeRegistration({
+      username: draft.username,
+      gender,
+      bio: normalizeBio(draft.bio),
+      photo: toPhotoMetadata(photo),
+    }, getSessionToken);
+
+    if (!result.registration_complete || !result.user) {
+      throw new Error('Kayıt tamamlandı yanıtı geçersiz. Ana ekrana geçiş engellendi.');
+    }
+    return result.user;
+  }, [draft.bio, draft.username, getSessionToken]);
+
+  /** Another attempt may already have finished the registration; if the server confirms it, the user moves on. */
+  const recoverCompletedProfile = useCallback(async (error: unknown): Promise<boolean> => {
+    if (!(error instanceof ApiRequestError) || error.code !== 'profile_already_complete') return false;
+    const registration = await refresh();
+    if (registration.status !== 'complete') return false;
+    finishOnboarding(registration.profile);
+    return true;
+  }, [finishOnboarding, refresh]);
+
+  const submitRegistration = useCallback(async () => {
+    const photo = getSubmittablePhoto(draft.photo);
+    const localErrors = getDraftFieldErrors(draft, photo);
+    if (Object.keys(localErrors).length > 0 || !draft.gender) {
+      showFieldErrors(localErrors);
+      return;
+    }
+
+    setIsBusy(true);
+    setActionError(null);
+    try {
+      finishOnboarding(await createProfile(draft.gender, photo));
+    } catch (error) {
+      if (await recoverCompletedProfile(error)) return;
+      handleActionError(error);
     } finally {
       setIsUploadingPhoto(false);
       setIsBusy(false);
     }
-  }, [applyApiFieldErrors, draft, getSessionToken, goToStep, markComplete, refresh]);
+  }, [createProfile, draft, finishOnboarding, handleActionError, recoverCompletedProfile, showFieldErrors]);
 
   const continueToNextStep = useCallback(() => {
     if (!canContinue) return;
@@ -324,7 +320,7 @@ export function OnboardingWizard() {
         </ScrollView>
 
         <View style={styles.actions}>
-          <AppPressable accessibilityRole="button" disabled={isBusy || isSigningOut || isStepAnimating} onPress={goBack} style={[styles.backButton, (isBusy || isSigningOut || isStepAnimating) && styles.disabledButton]}>
+          <AppPressable accessibilityRole="button" disabled={isInteractionLocked} onPress={goBack} style={[styles.backButton, isInteractionLocked && styles.disabledButton]}>
             {isSigningOut ? <ActivityIndicator size="small" color={colors.muted} /> : <ArrowLeft size={18} color={colors.muted} />}
             <ButtonLabel style={styles.backLabel}>{isSigningOut ? 'Çıkılıyor…' : 'Geri'}</ButtonLabel>
           </AppPressable>
@@ -350,69 +346,30 @@ function getPrimaryActionLabel(step: number, isBusy: boolean, isUploadingPhoto: 
   return step === stepCopy.length - 1 ? 'Hesabı oluştur' : 'Devam et';
 }
 
-function getApiFieldEntries(error: ApiRequestError): { field?: string; code?: string }[] {
-  const entries: { field?: string; code?: string }[] = [{ field: error.field, code: error.code }];
-  if (!error.details || typeof error.details !== 'object') return entries;
+function getEarliestFieldStep(fields: OnboardingField[]): number {
+  return Math.min(...fields.map((field) => stepOrder[field]));
+}
 
-  const details = error.details as {
-    fields?: unknown;
-    errors?: unknown;
-    field_errors?: unknown;
+/** A photo that is not a square of at least the minimum size is never sent; the profile is created without it. */
+function getSubmittablePhoto(photo: SelectedPhoto | null): SelectedPhoto | null {
+  return photo && hasRequiredPhotoDimensions(photo) ? photo : null;
+}
+
+function getStepFieldErrors(step: number, draft: OnboardingDraft): OnboardingFieldErrors {
+  const bioError = step === 2 ? getBioError(draft.bio) : null;
+  if (bioError) return { bio: bioError };
+  const photoError = step === 3 && draft.photo ? getSelectedPhotoError(draft.photo) : null;
+  return photoError ? { photo: photoError } : {};
+}
+
+function getDraftFieldErrors(draft: OnboardingDraft, photo: SelectedPhoto | null): OnboardingFieldErrors {
+  const errors: OnboardingFieldErrors = {
+    username: getUsernameFormatError(draft.username) ?? undefined,
+    gender: getGenderError(draft.gender) ?? undefined,
+    bio: getBioError(draft.bio) ?? undefined,
+    photo: (photo ? getPhotoMetadataError(photo) : null) ?? undefined,
   };
-  if (Array.isArray(details.fields)) {
-    for (const field of details.fields) {
-      if (typeof field === 'string') entries.push({ field });
-    }
-  }
-  if (Array.isArray(details.errors)) {
-    for (const item of details.errors) {
-      if (item && typeof item === 'object' && 'field' in item) {
-        const issue = item as { field?: unknown; code?: unknown };
-        entries.push({
-          field: typeof issue.field === 'string' ? issue.field : undefined,
-          code: typeof issue.code === 'string' ? issue.code : undefined,
-        });
-      }
-    }
-  }
-  if (details.field_errors && typeof details.field_errors === 'object') {
-    for (const field of Object.keys(details.field_errors)) entries.push({ field });
-  }
-  return entries;
-}
-
-function mapApiField(field?: string, code?: string): OnboardingField | null {
-  // A missing upload is retryable from the review step, so it is not shown as a photo field error.
-  if (code === 'photo_upload_incomplete') return null;
-  if (code === 'username_taken' || field === 'username') return 'username';
-  if (field === 'gender') return 'gender';
-  if (field === 'bio') return 'bio';
-  if (field?.startsWith('photo')) return 'photo';
-  if (code === 'invalid_username') return 'username';
-  if (code === 'invalid_gender') return 'gender';
-  if (code === 'invalid_bio') return 'bio';
-  if (code === 'invalid_photo') return 'photo';
-  return null;
-}
-
-function getApiFieldMessage(error: ApiRequestError, field: OnboardingField, code?: string): string {
-  const errorCode = code ?? error.code;
-  if (errorCode === 'username_taken') return 'Bu kullanıcı adı az önce alınmış. Başka bir ad seç.';
-  if (errorCode === 'invalid_username') return `Kullanıcı adı 3–${maxUsernameCharacters} karakter olmalı; küçük harfle başlamalı, yalnızca küçük harf, rakam ve alt çizgi kullanılmalı.`;
-  if (errorCode === 'invalid_gender') return 'Bir cinsiyet seçeneği belirle.';
-  if (errorCode === 'invalid_bio') return `Biyografi biçimini kontrol et. En fazla ${maxBioCodePoints} karakter kullanabilirsin.`;
-  if (errorCode === 'invalid_photo' && error.field === 'photo.size_bytes') return 'Fotoğraf en fazla 10 MiB olabilir.';
-  if (errorCode === 'invalid_photo') return 'Fotoğraf JPG, PNG veya HEIC olmalı ve dosya bilgileri eşleşmeli.';
-  return field === 'photo' ? 'Fotoğraf bilgileri geçerli değil.' : 'Bu alanı kontrol edip tekrar dene.';
-}
-
-function getApiActionMessage(error: unknown): string {
-  if (error instanceof ApiRequestError && error.code === 'photo_upload_incomplete') {
-    return 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.';
-  }
-  if (error instanceof ApiRequestError && error.status === 409) return 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.';
-  if (error instanceof ApiRequestError && error.status === 401) return 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.';
-  return error instanceof Error ? error.message : 'İşlem tamamlanamadı. Tekrar dene.';
+  return Object.fromEntries(Object.entries(errors).filter(([, message]) => message !== undefined));
 }
 
 const styles = StyleSheet.create({

@@ -1,8 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { BioStep, GenderStep, ReviewStep, UsernameStep, genderLabels } from '../OnboardingStepContent';
 
-jest.mock('react-native-zoom-toolkit');
-
 function createAvailability(status: 'idle' | 'waiting' | 'checking' | 'available' | 'taken' | 'error', message?: string) {
   return { status, message, retry: jest.fn() };
 }

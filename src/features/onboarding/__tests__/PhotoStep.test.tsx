@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import * as ImagePicker from 'expo-image-picker';
 import { Alert, Linking, type AlertButton } from 'react-native';
 import type * as ZoomToolkitMock from '../../../../__mocks__/react-native-zoom-toolkit';
-import { PhotoStep } from '../OnboardingStepContent';
+import { PhotoStep } from '../PhotoStep';
 import { createSquarePhoto, loadSourceImage } from '../photoProcessing';
 import type { SelectedPhoto } from '../types';
 import { photoTooSmallMessage } from '../validation';

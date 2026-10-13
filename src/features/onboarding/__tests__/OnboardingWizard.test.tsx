@@ -9,9 +9,6 @@ import { useRegistrationStatus } from '../RegistrationStatusProvider';
 import type { SelectedPhoto } from '../types';
 import { useUsernameAvailability } from '../useUsernameAvailability';
 
-jest.mock('react-native-zoom-toolkit');
-jest.mock('expo-image-picker', () => ({}));
-jest.mock('../photoProcessing', () => ({}));
 jest.mock('@clerk/expo', () => ({ useAuth: jest.fn() }));
 jest.mock('expo-router', () => ({ router: { replace: jest.fn() } }));
 jest.mock('../../auth/AuthTransitionProvider', () => ({ useAuthTransition: jest.fn() }));
@@ -27,10 +24,7 @@ jest.mock('../api', () => ({
   validateBiography: jest.fn(),
   validatePhoto: jest.fn(),
 }));
-jest.mock('../OnboardingStepContent', () => ({
-  ...jest.requireActual('../OnboardingStepContent'),
-  PhotoStep: mockPhotoStep,
-}));
+jest.mock('../PhotoStep', () => ({ PhotoStep: mockPhotoStep }));
 
 const mockSquarePhoto: SelectedPhoto = {
   uri: 'file:///cropped.jpg',
