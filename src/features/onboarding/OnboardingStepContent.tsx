@@ -7,8 +7,10 @@ import { AppPressable } from '../../components/AppPressable';
 import { AppText } from '../../components/AppText';
 import { ButtonLabel } from '../../components/ButtonLabel';
 import { colors } from '../../theme/colors';
+import { PhotoCropModal } from './PhotoCropModal';
+import { createSquarePhoto, loadSourceImage, type CropRect, type SourceImage } from './photoProcessing';
 import type { Gender, SelectedPhoto } from './types';
-import { getBioError, getPhotoMetadataError, maxBioCodePoints, maxUsernameCharacters } from './validation';
+import { getBioError, getSelectedPhotoError, isPhotoLargeEnough, maxBioCodePoints, maxUsernameCharacters, photoTooSmallMessage } from './validation';
 import { isUsernameAvailable, isUsernameCheckPending, type useUsernameAvailability } from './useUsernameAvailability';
 
 type Availability = ReturnType<typeof useUsernameAvailability>;
@@ -161,13 +163,16 @@ export const PhotoStep = memo(function PhotoStep({
   photo,
   errorMessage,
   onChange,
+  onPhotoRejected,
 }: {
   photo: SelectedPhoto | null;
   errorMessage?: string;
   onChange: (photo: SelectedPhoto | null) => void;
+  onPhotoRejected: (message: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [pickerSource, setPickerSource] = useState<'camera' | 'library' | null>(null);
+  const [cropSource, setCropSource] = useState<SourceImage | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [isSourceSheetMounted, setSourceSheetMounted] = useState(false);
   const [isSourceSheetVisible, setSourceSheetVisible] = useState(false);
@@ -175,7 +180,7 @@ export const PhotoStep = memo(function PhotoStep({
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const [sheetTranslateY] = useState(() => new Animated.Value(280));
   const onSourceSheetClosed = useRef<(() => void) | null>(null);
-  const metadataError = photo ? getPhotoMetadataError(photo) : null;
+  const photoError = photo ? getSelectedPhotoError(photo) : null;
 
   const openSourceSheet = useCallback(() => {
     backdropOpacity.setValue(0);
@@ -250,20 +255,43 @@ export const PhotoStep = memo(function PhotoStep({
         setSelectionError('Bir fotoğraf dosyası seçmelisin.');
         return;
       }
-      if (!asset.fileSize) {
-        setSelectionError('Fotoğrafın boyutu okunamadı. Başka bir fotoğraf seçmeyi dene.');
+
+      const sourceImage = await loadSourceImage(asset.uri);
+      if (!isPhotoLargeEnough(sourceImage)) {
+        onPhotoRejected(photoTooSmallMessage);
         return;
       }
-
-      const photoName = getPhotoFileName(asset.fileName, asset.uri, asset.mimeType);
-      const mimeType = asset.mimeType ?? mimeTypeFromName(photoName) ?? '';
-      onChange({ file_name: photoName, mime_type: mimeType, size_bytes: asset.fileSize, uri: asset.uri });
+      setCropSource(sourceImage);
     } catch {
       setSelectionError('Fotoğraf açılamadı. Tekrar deneyebilir veya bu adımı atlayabilirsin.');
     } finally {
       setPickerSource(null);
     }
-  }, [handlePermissionDenied, onChange, pickerSource]);
+  }, [handlePermissionDenied, onPhotoRejected, pickerSource]);
+
+  const cancelCrop = useCallback(() => setCropSource(null), []);
+
+  const applyCrop = useCallback(async (cropRect: CropRect) => {
+    if (!cropSource) return;
+    try {
+      const croppedPhoto = await createSquarePhoto(cropSource, cropRect);
+      setCropSource(null);
+      if (!isPhotoLargeEnough(croppedPhoto)) {
+        onPhotoRejected(photoTooSmallMessage);
+        return;
+      }
+      const croppedPhotoError = getSelectedPhotoError(croppedPhoto);
+      if (croppedPhotoError) {
+        setSelectionError(croppedPhotoError);
+        return;
+      }
+      setSelectionError(null);
+      onChange(croppedPhoto);
+    } catch {
+      setCropSource(null);
+      setSelectionError('Fotoğraf kırpılamadı. Tekrar deneyebilir veya bu adımı atlayabilirsin.');
+    }
+  }, [cropSource, onChange, onPhotoRejected]);
 
   const removePhoto = useCallback(() => {
     onChange(null);
@@ -325,9 +353,11 @@ export const PhotoStep = memo(function PhotoStep({
           onPress={openGallery}
         />
       </View>
-      {errorMessage || selectionError || metadataError ? (
-        <AppText style={[styles.helperText, styles.errorText]}>{errorMessage ?? selectionError ?? metadataError}</AppText>
+      {errorMessage || selectionError || photoError ? (
+        <AppText style={[styles.helperText, styles.errorText]}>{errorMessage ?? selectionError ?? photoError}</AppText>
       ) : null}
+
+      <PhotoCropModal source={cropSource} onCancel={cancelCrop} onConfirm={applyCrop} />
 
       <Modal
         animationType="none"
@@ -397,23 +427,6 @@ function PickerButton({
       <ButtonLabel style={styles.pickerButtonText}>{label}</ButtonLabel>
     </AppPressable>
   );
-}
-
-function getPhotoFileName(fileName: string | null | undefined, uri: string, mimeType?: string): string {
-  const uriPath = uri.split(/[?#]/, 1)[0] ?? uri;
-  const uriName = uriPath.split(/[\\/]/).pop() ?? '';
-  const candidate = (fileName || uriName).split(/[\\/]/).pop() ?? '';
-  if (candidate.includes('.')) return candidate;
-  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/heic' ? 'heic' : mimeType === 'image/jpeg' ? 'jpg' : '';
-  return extension ? `profile-photo.${extension}` : candidate;
-}
-
-function mimeTypeFromName(fileName: string): string | null {
-  const extension = fileName.split('.').pop()?.toLowerCase();
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'png') return 'image/png';
-  if (extension === 'heic') return 'image/heic';
-  return null;
 }
 
 export const ReviewStep = memo(function ReviewStep({

@@ -8,6 +8,8 @@ export type PhotoMetadata = {
 
 export type SelectedPhoto = PhotoMetadata & {
   uri: string;
+  width: number;
+  height: number;
 };
 
 export type OnboardingDraft = {

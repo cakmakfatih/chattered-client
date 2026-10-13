@@ -8,14 +8,24 @@ import { AppPressable } from '../../components/AppPressable';
 import { BrandMark } from '../../components/BrandMark';
 import { ButtonLabel } from '../../components/ButtonLabel';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { Snackbar, type SnackbarNotice } from '../../components/Snackbar';
 import { colors } from '../../theme/colors';
 import { useAuthTransition } from '../auth/AuthTransitionProvider';
-import { ApiRequestError, completeRegistration, validateBiography, validatePhoto } from './api';
+import { ApiRequestError, completeRegistration, uploadProfilePhoto, validateBiography, validatePhoto } from './api';
 import { useRegistrationStatus } from './RegistrationStatusProvider';
 import type { Gender, OnboardingDraft, OnboardingField, OnboardingFieldErrors, SelectedPhoto } from './types';
 import { emptyOnboardingDraft, normalizeBio, toPhotoMetadata } from './types';
 import { useUsernameAvailability } from './useUsernameAvailability';
-import { getBioError, getGenderError, getPhotoMetadataError, getUsernameFormatError, maxBioCodePoints, maxUsernameCharacters } from './validation';
+import {
+  getBioError,
+  getGenderError,
+  getPhotoMetadataError,
+  getSelectedPhotoError,
+  getUsernameFormatError,
+  hasRequiredPhotoDimensions,
+  maxBioCodePoints,
+  maxUsernameCharacters,
+} from './validation';
 import { BioStep, genderLabels, GenderStep, PhotoStep, ReviewStep, UsernameStep } from './OnboardingStepContent';
 
 const stepCopy = [
@@ -44,6 +54,8 @@ export function OnboardingWizard() {
   const [fieldErrors, setFieldErrors] = useState<OnboardingFieldErrors>({});
   const [actionError, setActionError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [snackbarNotice, setSnackbarNotice] = useState<SnackbarNotice | null>(null);
   const availability = useUsernameAvailability(draft.username, getSessionToken, step === 0, usernameRevision);
 
   const updateDraft = useCallback(<TField extends keyof OnboardingDraft>(field: TField, value: OnboardingDraft[TField]) => {
@@ -59,6 +71,10 @@ export function OnboardingWizard() {
   const updateGender = useCallback((gender: Gender) => updateDraft('gender', gender), [updateDraft]);
   const updateBio = useCallback((bio: string) => updateDraft('bio', bio), [updateDraft]);
   const updatePhoto = useCallback((photo: SelectedPhoto | null) => updateDraft('photo', photo), [updateDraft]);
+  const showSnackbar = useCallback((message: string) => {
+    setSnackbarNotice((current) => ({ id: (current?.id ?? 0) + 1, message }));
+  }, []);
+  const dismissSnackbar = useCallback(() => setSnackbarNotice(null), []);
 
   const goToStep = useCallback((nextStep: number) => {
     if (nextStep === step || isStepAnimating) return;
@@ -87,7 +103,7 @@ export function OnboardingWizard() {
     if (step === 0) return availability.status === 'available' && !fieldErrors.username;
     if (step === 1) return draft.gender !== null && !fieldErrors.gender;
     if (step === 2) return getBioError(draft.bio) === null && !fieldErrors.bio;
-    if (step === 3) return (!draft.photo || getPhotoMetadataError(draft.photo) === null) && !fieldErrors.photo;
+    if (step === 3) return (!draft.photo || getSelectedPhotoError(draft.photo) === null) && !fieldErrors.photo;
     return true;
   }, [availability.status, draft.bio, draft.gender, draft.photo, fieldErrors, isBusy, isSigningOut, isStepAnimating, step]);
 
@@ -139,7 +155,7 @@ export function OnboardingWizard() {
       }
 
       if (step === 3) {
-        const photoError = draft.photo ? getPhotoMetadataError(draft.photo) : null;
+        const photoError = draft.photo ? getSelectedPhotoError(draft.photo) : null;
         if (photoError) {
           setFieldErrors((current) => ({ ...current, photo: photoError }));
           return;
@@ -157,11 +173,13 @@ export function OnboardingWizard() {
   }, [applyApiFieldErrors, draft.bio, draft.photo, getSessionToken, goToStep, step]);
 
   const submitRegistration = useCallback(async () => {
+    // A photo that is not a square of at least the minimum size is never sent; the profile is created without it.
+    const photo = draft.photo && hasRequiredPhotoDimensions(draft.photo) ? draft.photo : null;
     const localErrors: OnboardingFieldErrors = {};
     const usernameError = getUsernameFormatError(draft.username);
     const genderError = getGenderError(draft.gender);
     const bioError = getBioError(draft.bio);
-    const photoError = draft.photo ? getPhotoMetadataError(draft.photo) : null;
+    const photoError = photo ? getPhotoMetadataError(photo) : null;
     if (usernameError) localErrors.username = usernameError;
     if (genderError) localErrors.gender = genderError;
     if (bioError) localErrors.bio = bioError;
@@ -179,11 +197,16 @@ export function OnboardingWizard() {
     try {
       const selectedGender = draft.gender;
       if (!selectedGender) throw new Error('Bir cinsiyet seçeneği belirle.');
+      if (photo) {
+        setIsUploadingPhoto(true);
+        await uploadProfilePhoto(photo, getSessionToken);
+        setIsUploadingPhoto(false);
+      }
       const result = await completeRegistration({
         username: draft.username,
         gender: selectedGender,
         bio: normalizeBio(draft.bio),
-        photo: toPhotoMetadata(draft.photo),
+        photo: toPhotoMetadata(photo),
       }, getSessionToken);
 
       if (!result.registration_complete || !result.user) {
@@ -203,6 +226,7 @@ export function OnboardingWizard() {
       if (error instanceof ApiRequestError && applyApiFieldErrors(error)) return;
       setActionError(getApiActionMessage(error));
     } finally {
+      setIsUploadingPhoto(false);
       setIsBusy(false);
     }
   }, [applyApiFieldErrors, draft, getSessionToken, goToStep, markComplete, refresh]);
@@ -277,6 +301,7 @@ export function OnboardingWizard() {
               photo={draft.photo}
               errorMessage={fieldErrors.photo}
               onChange={updatePhoto}
+              onPhotoRejected={showSnackbar}
             />
           ) : null}
           {step === 4 ? (
@@ -310,12 +335,19 @@ export function OnboardingWizard() {
             style={[styles.primaryButton, !canContinue && styles.disabledButton]}
           >
             {isBusy ? <ActivityIndicator size="small" color={colors.surface} /> : step === 4 ? <Check size={18} color={colors.surface} /> : <ArrowRight size={18} color={colors.surface} />}
-            <ButtonLabel style={styles.primaryButtonText}>{isBusy ? 'Kontrol ediliyor…' : step === 4 ? 'Hesabı oluştur' : 'Devam et'}</ButtonLabel>
+            <ButtonLabel style={styles.primaryButtonText}>{getPrimaryActionLabel(step, isBusy, isUploadingPhoto)}</ButtonLabel>
           </AppPressable>
         </View>
+        <Snackbar notice={snackbarNotice} onDismiss={dismissSnackbar} style={styles.snackbar} />
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
+}
+
+function getPrimaryActionLabel(step: number, isBusy: boolean, isUploadingPhoto: boolean): string {
+  if (isUploadingPhoto) return 'Fotoğraf yükleniyor…';
+  if (isBusy) return 'Kontrol ediliyor…';
+  return step === stepCopy.length - 1 ? 'Hesabı oluştur' : 'Devam et';
 }
 
 function getApiFieldEntries(error: ApiRequestError): { field?: string; code?: string }[] {
@@ -350,6 +382,8 @@ function getApiFieldEntries(error: ApiRequestError): { field?: string; code?: st
 }
 
 function mapApiField(field?: string, code?: string): OnboardingField | null {
+  // A missing upload is retryable from the review step, so it is not shown as a photo field error.
+  if (code === 'photo_upload_incomplete') return null;
   if (code === 'username_taken' || field === 'username') return 'username';
   if (field === 'gender') return 'gender';
   if (field === 'bio') return 'bio';
@@ -373,6 +407,9 @@ function getApiFieldMessage(error: ApiRequestError, field: OnboardingField, code
 }
 
 function getApiActionMessage(error: unknown): string {
+  if (error instanceof ApiRequestError && error.code === 'photo_upload_incomplete') {
+    return 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.';
+  }
   if (error instanceof ApiRequestError && error.status === 409) return 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.';
   if (error instanceof ApiRequestError && error.status === 401) return 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.';
   return error instanceof Error ? error.message : 'İşlem tamamlanamadı. Tekrar dene.';
@@ -399,4 +436,5 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 52, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 26, backgroundColor: colors.primary, paddingHorizontal: 20 },
   primaryButtonText: { color: colors.surface, fontSize: 15, fontWeight: '600' },
   disabledButton: { opacity: 0.55 },
+  snackbar: { bottom: 70 },
 });
