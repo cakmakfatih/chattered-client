@@ -14,7 +14,7 @@ const usernameSchema = v.pipe(
 );
 
 const genderSchema = v.pipe(
-  v.string(),
+  v.string('Bir seçenek belirle.'),
   v.check((gender): gender is Gender => gender === 'male' || gender === 'female' || gender === 'other', 'Bir seçenek belirle.'),
 );
 
