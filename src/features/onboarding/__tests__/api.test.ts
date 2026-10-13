@@ -219,11 +219,11 @@ describe('getRegistrationStatus', () => {
   });
 
   it.each([
-    [null, 'Sunucudan geçersiz kayıt durumu alındı.'],
-    [{ registration_complete: 'yes', user: null }, 'Sunucudan geçersiz kayıt durumu alındı.'],
-    [{ registration_complete: false, user: completeProfile }, 'Sunucudan geçersiz kayıt durumu alındı.'],
-    [{ registration_complete: true, user: { username: 'x', gender: 'unknown', bio: null } }, 'Kullanıcı profili yüklenemedi. Ana ekrana geçiş engellendi.'],
-  ])('rejects the malformed payload %p', async (payload, message) => {
+    ['an empty body', null, 'Sunucudan geçersiz kayıt durumu alındı.'],
+    ['a non-boolean completion flag', { registration_complete: 'yes', user: null }, 'Sunucudan geçersiz kayıt durumu alındı.'],
+    ['an incomplete registration with a profile', { registration_complete: false, user: completeProfile }, 'Sunucudan geçersiz kayıt durumu alındı.'],
+    ['a complete registration with an invalid profile', { registration_complete: true, user: { username: 'x', gender: 'unknown', bio: null } }, 'Kullanıcı profili yüklenemedi. Ana ekrana geçiş engellendi.'],
+  ])('rejects %s', async (_case, payload, message) => {
     // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, payload));
 
@@ -324,7 +324,7 @@ describe('validateBiography', () => {
   it.each([
     { valid: false, normalized_bio: 'Merhaba' },
     { valid: true, normalized_bio: 'merhaba' },
-  ])('rejects the unconfirmed result %p', async (result) => {
+  ])('rejects a result with valid $valid and the normalized bio $normalized_bio', async (result) => {
     // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, result));
 
@@ -373,11 +373,11 @@ describe('uploadProfilePhoto', () => {
   });
 
   it.each([
-    { ...uploadAuthorization, upload_url: 'ftp://storage.chattered.test/photo' },
-    { ...uploadAuthorization, method: 'POST' },
-    { ...uploadAuthorization, headers: null },
-    { ...uploadAuthorization, headers: { 'Content-Length': 240000 } },
-  ])('rejects the invalid upload authorization %p', async (authorization) => {
+    ['a non-HTTPS upload URL', { ...uploadAuthorization, upload_url: 'ftp://storage.chattered.test/photo' }],
+    ['a method other than PUT', { ...uploadAuthorization, method: 'POST' }],
+    ['missing headers', { ...uploadAuthorization, headers: null }],
+    ['non-string header values', { ...uploadAuthorization, headers: { 'Content-Length': 240000 } }],
+  ])('rejects an upload authorization with %s', async (_case, authorization) => {
     // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, authorization));
 
@@ -448,10 +448,10 @@ describe('completeRegistration', () => {
   });
 
   it.each([
-    [null, 'Sunucudan geçersiz kayıt yanıtı alındı.'],
-    [{ registration_complete: false, user: null }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
-    [{ registration_complete: true, user: { username: 1, gender: 'male', bio: null } }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
-  ])('rejects the malformed payload %p', async (payload, message) => {
+    ['an empty body', null, 'Sunucudan geçersiz kayıt yanıtı alındı.'],
+    ['an incomplete registration', { registration_complete: false, user: null }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
+    ['a complete registration with an invalid profile', { registration_complete: true, user: { username: 1, gender: 'male', bio: null } }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
+  ])('rejects %s', async (_case, payload, message) => {
     // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, payload));
 

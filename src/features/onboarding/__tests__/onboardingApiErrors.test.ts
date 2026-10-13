@@ -72,12 +72,12 @@ describe('getOnboardingFieldErrors', () => {
 
 describe('getOnboardingActionMessage', () => {
   it.each([
-    [apiError('photo_upload_incomplete'), 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.'],
-    [apiError(undefined, undefined, undefined, 409), 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.'],
-    [apiError(undefined, undefined, undefined, 401), 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.'],
-    [new Error('Bağlantı kesildi'), 'Bağlantı kesildi'],
-    ['boom', 'İşlem tamamlanamadı. Tekrar dene.'],
-  ])('returns the message for %p', (error, expectedMessage) => {
+    ['an incomplete photo upload', apiError('photo_upload_incomplete'), 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.'],
+    ['an HTTP 409 conflict', apiError(undefined, undefined, undefined, 409), 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.'],
+    ['an HTTP 401 response', apiError(undefined, undefined, undefined, 401), 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.'],
+    ['a plain Error', new Error('Bağlantı kesildi'), 'Bağlantı kesildi'],
+    ['a non-error value', 'boom', 'İşlem tamamlanamadı. Tekrar dene.'],
+  ])('returns the message for %s', (_case, error, expectedMessage) => {
     // Arrange
     const input = error;
 

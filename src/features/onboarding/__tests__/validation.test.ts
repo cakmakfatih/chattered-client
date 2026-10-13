@@ -137,7 +137,7 @@ describe('photo metadata validation', () => {
     { file_name: 'a.JPEG', mime_type: 'image/jpeg', size_bytes: 1 },
     { file_name: 'a.png', mime_type: 'image/png', size_bytes: 1 },
     { file_name: 'a.heic', mime_type: 'image/heic', size_bytes: 1 },
-  ])('accepts %p with a matching MIME type', (photo) => {
+  ])('accepts $file_name with the matching MIME type $mime_type', (photo) => {
     // Arrange
     const metadata = photo;
 
@@ -149,15 +149,15 @@ describe('photo metadata validation', () => {
   });
 
   it.each([
-    [{ file_name: '', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf dosya adı okunamadı.'],
-    [{ file_name: 'dir/a.jpg', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf dosya adı bir klasör yolu içeremez.'],
-    [{ file_name: 'a.gif', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf JPG, PNG veya HEIC formatında olmalı.'],
-    [{ file_name: 'a.jpg', mime_type: 'image/gif', size_bytes: 1 }, 'Fotoğrafın dosya türü desteklenmiyor.'],
-    [{ file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 1.5 }, 'Fotoğraf boyutu okunamadı.'],
-    [{ file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 0 }, 'Fotoğraf boş olamaz.'],
-    [{ file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 10 * 1024 * 1024 + 1 }, 'Fotoğraf en fazla 10 MiB olabilir.'],
-    [{ file_name: 'a.png', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğrafın MIME türü uzantısıyla eşleşmiyor.'],
-  ])('rejects %p', (photo, message) => {
+    ['an empty file name', { file_name: '', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf dosya adı okunamadı.'],
+    ['a file name with a folder path', { file_name: 'dir/a.jpg', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf dosya adı bir klasör yolu içeremez.'],
+    ['an unsupported extension', { file_name: 'a.gif', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğraf JPG, PNG veya HEIC formatında olmalı.'],
+    ['an unsupported MIME type', { file_name: 'a.jpg', mime_type: 'image/gif', size_bytes: 1 }, 'Fotoğrafın dosya türü desteklenmiyor.'],
+    ['a fractional size', { file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 1.5 }, 'Fotoğraf boyutu okunamadı.'],
+    ['an empty file', { file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 0 }, 'Fotoğraf boş olamaz.'],
+    ['a file larger than 10 MiB', { file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 10 * 1024 * 1024 + 1 }, 'Fotoğraf en fazla 10 MiB olabilir.'],
+    ['a MIME type that does not match the extension', { file_name: 'a.png', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğrafın MIME türü uzantısıyla eşleşmiyor.'],
+  ])('rejects %s', (_case, photo, message) => {
     // Arrange
     const metadata = photo;
 
@@ -171,10 +171,10 @@ describe('photo metadata validation', () => {
 
 describe('photo dimension validation', () => {
   it.each([
-    ['both sides at the minimum', { width: minPhotoDimension, height: minPhotoDimension }, true],
-    ['a width below the minimum', { width: minPhotoDimension - 1, height: 2000 }, false],
-    ['a height below the minimum', { width: 2000, height: minPhotoDimension - 1 }, false],
-  ])('treats a photo with %s as large enough: %p', (_case, size, expected) => {
+    ['large enough', 'both sides at the minimum', { width: minPhotoDimension, height: minPhotoDimension }, true],
+    ['too small', 'a width below the minimum', { width: minPhotoDimension - 1, height: 2000 }, false],
+    ['too small', 'a height below the minimum', { width: 2000, height: minPhotoDimension - 1 }, false],
+  ])('treats a photo as %s with %s', (_verdict, _case, size, expected) => {
     // Arrange
     const photo = size;
 

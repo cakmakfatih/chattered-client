@@ -192,10 +192,10 @@ describe('availability status helpers', () => {
   });
 
   it.each([
-    ['waiting', true],
-    ['checking', true],
-    ['available', false],
-  ] as const)('treats the %p status as pending: %p', (status, expected) => {
+    ['waiting', 'pending', true],
+    ['checking', 'pending', true],
+    ['available', 'not pending', false],
+  ] as const)('treats the %p status as %s', (status, _verdict, expected) => {
     // Arrange
     const input = status;
 
@@ -207,9 +207,9 @@ describe('availability status helpers', () => {
   });
 
   it.each([
-    ['available', true],
-    ['taken', false],
-  ] as const)('treats the %p status as available: %p', (status, expected) => {
+    ['available', 'available', true],
+    ['taken', 'unavailable', false],
+  ] as const)('treats the %p status as %s', (status, _verdict, expected) => {
     // Arrange
     const input = status;
 

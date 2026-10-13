@@ -72,10 +72,10 @@ describe('IndexRoute', () => {
   });
 
   it.each([
-    [{ apiStatus: 500, errorCode: 'internal' }, false],
-    [{ apiStatus: 401, errorCode: null }, true],
-    [{ apiStatus: null, errorCode: 'unauthorized' }, true],
-  ])('shows the status error screen for %p', async (error, isUnauthorized) => {
+    ['a server error', { apiStatus: 500, errorCode: 'internal' }, false],
+    ['an HTTP 401 response, marked as unauthorized', { apiStatus: 401, errorCode: null }, true],
+    ['an unauthorized error code, marked as unauthorized', { apiStatus: null, errorCode: 'unauthorized' }, true],
+  ])('shows the status error screen for %s', async (_case, error, isUnauthorized) => {
     // Arrange
     mockSession({ isLoaded: true, isSignedIn: true }, { status: 'error', ...signedIn, message: 'Durum alınamadı.', ...error });
 

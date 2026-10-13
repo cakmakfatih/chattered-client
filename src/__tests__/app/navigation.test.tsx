@@ -137,9 +137,9 @@ describe('RootLayout', () => {
 
 describe('RootLayout guards', () => {
   it.each([
-    ['a signed-out user', false, 'loading', true],
-    ['a user with a completed registration', true, 'complete', false],
-  ] as const)('shows the welcome screen to %s: %p', async (_case, isSignedIn, status, isVisible) => {
+    ['shows the welcome screen to a signed-out user', false, 'loading', true],
+    ['hides the welcome screen from a user with a completed registration', true, 'complete', false],
+  ] as const)('%s', async (_case, isSignedIn, status, isVisible) => {
     // Arrange
     mockSession(isSignedIn, status);
 
@@ -151,9 +151,9 @@ describe('RootLayout guards', () => {
   });
 
   it.each([
-    ['an incomplete registration', 'incomplete', true],
-    ['a completed registration', 'complete', false],
-  ] as const)('shows onboarding for %s: %p', async (_case, status, isVisible) => {
+    ['shows onboarding for an incomplete registration', 'incomplete', true],
+    ['hides onboarding after a completed registration', 'complete', false],
+  ] as const)('%s', async (_case, status, isVisible) => {
     // Arrange
     mockSession(true, status);
 
@@ -165,10 +165,10 @@ describe('RootLayout guards', () => {
   });
 
   it.each([
-    [false, 'loading'],
-    [true, 'loading'],
-    [true, 'incomplete'],
-  ] as const)('hides the tabs when signed in is %p and the registration is %p', async (isSignedIn, status) => {
+    ['a signed-out user', false, 'loading'],
+    ['a signed-in user whose registration is loading', true, 'loading'],
+    ['a signed-in user with an incomplete registration', true, 'incomplete'],
+  ] as const)('hides the tabs from %s', async (_case, isSignedIn, status) => {
     // Arrange
     mockSession(isSignedIn, status);
 

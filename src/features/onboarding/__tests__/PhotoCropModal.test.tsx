@@ -55,10 +55,10 @@ describe('PhotoCropModal', () => {
   });
 
   it.each([
-    [{ width: 2048, height: 1536 }, 1536 / 513],
-    [{ width: 600, height: 800 }, 600 / 513],
-    [{ width: 512, height: 512 }, 1],
-  ])('limits zoom for a %p image so the crop keeps 512 pixels', async (size, maxScale) => {
+    ['2048x1536', { width: 2048, height: 1536 }, 1536 / 513],
+    ['600x800', { width: 600, height: 800 }, 600 / 513],
+    ['512x512', { width: 512, height: 512 }, 1],
+  ])('limits zoom for a %s image so the crop keeps 512 pixels', async (_case, size, maxScale) => {
     // Arrange
     const source = { uri: 'file:///photo.jpg', ...size };
 

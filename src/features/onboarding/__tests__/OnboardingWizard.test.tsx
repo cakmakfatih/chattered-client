@@ -509,12 +509,12 @@ describe('OnboardingWizard registration', () => {
   });
 
   it.each([
-    [new ApiRequestError('missing', 409, 'photo_upload_incomplete', 'photo'), 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.'],
-    [new ApiRequestError('conflict', 409, 'conflict'), 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.'],
-    [new ApiRequestError('expired', 401, 'unauthorized'), 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.'],
-    [new ApiRequestError('Sunucu hatası.', 500, 'internal'), 'Sunucu hatası.'],
-    ['boom', 'İşlem tamamlanamadı. Tekrar dene.'],
-  ])('shows an action error for %p', async (error, message) => {
+    ['an incomplete photo upload', new ApiRequestError('missing', 409, 'photo_upload_incomplete', 'photo'), 'Fotoğraf yüklemesi tamamlanmadı. Tekrar dene ya da fotoğrafı kaldır.'],
+    ['a registration conflict', new ApiRequestError('conflict', 409, 'conflict'), 'Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.'],
+    ['an expired session', new ApiRequestError('expired', 401, 'unauthorized'), 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.'],
+    ['a server error', new ApiRequestError('Sunucu hatası.', 500, 'internal'), 'Sunucu hatası.'],
+    ['an unexpected failure', 'boom', 'İşlem tamamlanamadı. Tekrar dene.'],
+  ])('shows an action error for %s', async (_case, error, message) => {
     // Arrange
     jest.mocked(completeRegistration).mockRejectedValue(error);
     await renderWizardAtStep(4);
