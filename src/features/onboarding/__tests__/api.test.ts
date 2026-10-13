@@ -64,12 +64,16 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+
 describe('request handling', () => {
   it('sends an authenticated GET without a body', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { registration_complete: false, user: null }));
 
+    // Act
     await getRegistrationStatus(getToken);
 
+    // Assert
     expect(fetchMock).toHaveBeenCalledWith(`${apiUrl}/me`, expect.objectContaining({
       method: 'GET',
       headers: { Authorization: 'Bearer session-token' },
@@ -78,10 +82,13 @@ describe('request handling', () => {
   });
 
   it('sends JSON bodies with POST by default', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { valid: true }));
 
+    // Act
     await validatePhoto(null, getToken);
 
+    // Assert
     expect(fetchMock).toHaveBeenCalledWith(`${apiUrl}/onboarding/photo/validate`, expect.objectContaining({
       method: 'POST',
       headers: { Authorization: 'Bearer session-token', 'Content-Type': 'application/json' },
@@ -92,39 +99,51 @@ describe('request handling', () => {
   it.each([
     ['throws', () => getToken.mockRejectedValue(new Error('clerk offline'))],
     ['returns no token', () => getToken.mockResolvedValue(null)],
-  ])('rejects as unauthorized when the session token provider %s', async (_case, arrange) => {
-    arrange();
+  ])('rejects as unauthorized when the session token provider %s', async (_case, mockTokenProvider) => {
+    // Arrange
+    mockTokenProvider();
 
+    // Act
     const error = await captureError(getRegistrationStatus(getToken));
 
+    // Assert
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error).toMatchObject({ status: 401, code: 'unauthorized' });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('maps network failures to a connection error', async () => {
+    // Arrange
     fetchMock.mockRejectedValue(new TypeError('Network request failed'));
 
+    // Act
     const error = await captureError(getRegistrationStatus(getToken));
 
+    // Assert
     expect(error).toMatchObject({ message: 'Lütfen bağlantınızı kontrol edin.', status: 0, code: 'network_error' });
   });
 
   it('aborts slow requests after fifteen seconds', async () => {
+    // Arrange
     jest.useFakeTimers();
     fetchMock.mockImplementation(abortableFetch);
-
     const pending = captureError(getRegistrationStatus(getToken));
+
+    // Act
     await jest.advanceTimersByTimeAsync(15_000);
 
+    // Assert
     expect(await pending).toMatchObject({ status: 0, code: 'request_timeout' });
   });
 
   it('tolerates error responses without a JSON body', async () => {
+    // Arrange
     fetchMock.mockResolvedValue({ ok: false, status: 502, json: jest.fn().mockRejectedValue(new SyntaxError('bad json')) });
 
+    // Act
     const error = await captureError(getRegistrationStatus(getToken));
 
+    // Assert
     expect(error).toMatchObject({ status: 502, message: 'İşlem şu anda tamamlanamıyor. Lütfen daha sonra tekrar deneyin.' });
   });
 
@@ -135,49 +154,68 @@ describe('request handling', () => {
     [422, 'unexpected_field', 'Bilgileri kontrol edip tekrar deneyin.'],
     [409, 'profile_already_complete', 'İşlem tamamlanamadı. Lütfen tekrar deneyin.'],
   ])('maps HTTP %p with code %p to a user-facing message', async (status, code, message) => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(status, { error: { code, field: 'bio', details: { max: 300 } } }));
 
+    // Act
     const error = await captureError(validateBiography('x', getToken));
 
+    // Assert
     expect(error).toMatchObject({ status, code, message, field: 'bio', details: { max: 300 } });
   });
 
   it('maps HTTP 401 to an unauthorized error', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'token_expired' } }));
 
+    // Act
     const error = await captureError(getRegistrationStatus(getToken));
 
+    // Assert
     expect(error).toMatchObject({ status: 401, code: 'unauthorized', message: 'Oturum doğrulanamadı. Lütfen tekrar giriş yapın.' });
   });
 
-  it('fails fast when the API URL is not configured', async () => {
+  describe('without a configured API URL', () => {
     const originalUrl = process.env.EXPO_PUBLIC_API_URL;
-    delete process.env.EXPO_PUBLIC_API_URL;
-    try {
+
+    beforeEach(() => {
+      delete process.env.EXPO_PUBLIC_API_URL;
+    });
+
+    afterEach(() => {
+      process.env.EXPO_PUBLIC_API_URL = originalUrl;
+    });
+
+    it('fails fast without calling the network', async () => {
+      // Arrange
       let isolatedApi: typeof import('../api') | undefined;
       jest.isolateModules(() => {
-        isolatedApi = require('../api');
+        isolatedApi = jest.requireActual('../api');
       });
 
-      await expect(isolatedApi!.getRegistrationStatus(getToken)).rejects.toThrow('Lütfen bağlantınızı kontrol edin.');
+      // Act
+      const error = await captureError(isolatedApi!.getRegistrationStatus(getToken));
+
+      // Assert
+      expect(error).toEqual(new Error('Lütfen bağlantınızı kontrol edin.'));
       expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      process.env.EXPO_PUBLIC_API_URL = originalUrl;
-    }
+    });
   });
 });
 
 describe('getRegistrationStatus', () => {
-  it('returns a complete registration with its profile', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { registration_complete: true, user: completeProfile }));
+  it.each([
+    ['a complete registration with its profile', { registration_complete: true, user: completeProfile }],
+    ['an incomplete registration', { registration_complete: false, user: null }],
+  ])('returns %s', async (_case, payload) => {
+    // Arrange
+    fetchMock.mockResolvedValue(jsonResponse(200, payload));
 
-    await expect(getRegistrationStatus(getToken)).resolves.toEqual({ registration_complete: true, user: completeProfile });
-  });
+    // Act
+    const status = await getRegistrationStatus(getToken);
 
-  it('returns an incomplete registration', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, { registration_complete: false, user: null }));
-
-    await expect(getRegistrationStatus(getToken)).resolves.toEqual({ registration_complete: false, user: null });
+    // Assert
+    expect(status).toEqual(payload);
   });
 
   it.each([
@@ -186,43 +224,59 @@ describe('getRegistrationStatus', () => {
     [{ registration_complete: false, user: completeProfile }, 'Sunucudan geçersiz kayıt durumu alındı.'],
     [{ registration_complete: true, user: { username: 'x', gender: 'unknown', bio: null } }, 'Kullanıcı profili yüklenemedi. Ana ekrana geçiş engellendi.'],
   ])('rejects the malformed payload %p', async (payload, message) => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, payload));
 
-    await expect(getRegistrationStatus(getToken)).rejects.toThrow(message);
+    // Act
+    const error = await captureError(getRegistrationStatus(getToken));
+
+    // Assert
+    expect(error.message).toBe(message);
   });
 });
 
 describe('checkUsernameAvailability', () => {
   it('posts the username and returns its availability', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { available: false }));
 
-    await expect(checkUsernameAvailability('maviay', getToken)).resolves.toBe(false);
+    // Act
+    const isAvailable = await checkUsernameAvailability('maviay', getToken);
+
+    // Assert
+    expect(isAvailable).toBe(false);
     expect(fetchMock).toHaveBeenCalledWith(`${apiUrl}/onboarding/username/check`, expect.objectContaining({
       body: JSON.stringify({ username: 'maviay' }),
     }));
   });
 
   it('retries while the session is still being validated', async () => {
+    // Arrange
     jest.useFakeTimers();
     fetchMock
       .mockResolvedValueOnce(jsonResponse(401, {}))
       .mockResolvedValueOnce(jsonResponse(401, {}))
       .mockResolvedValueOnce(jsonResponse(200, { available: true }));
-
     const pending = checkUsernameAvailability('maviay', getToken);
+
+    // Act
     await jest.advanceTimersByTimeAsync(250 + 500);
 
-    await expect(pending).resolves.toBe(true);
+    // Assert
+    expect(await pending).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('gives up after three retries with a username specific message', async () => {
+    // Arrange
     jest.useFakeTimers();
     fetchMock.mockResolvedValue(jsonResponse(401, {}));
-
     const pending = captureError(checkUsernameAvailability('maviay', getToken));
+
+    // Act
     await jest.advanceTimersByTimeAsync(250 + 500 + 1000);
 
+    // Assert
     expect(await pending).toMatchObject({
       status: 401,
       code: 'unauthorized',
@@ -232,51 +286,79 @@ describe('checkUsernameAvailability', () => {
   });
 
   it('does not retry other errors', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(500, {}));
 
-    await expect(checkUsernameAvailability('maviay', getToken)).rejects.toMatchObject({ status: 500 });
+    // Act
+    const error = await captureError(checkUsernameAvailability('maviay', getToken));
+
+    // Assert
+    expect(error).toMatchObject({ status: 500 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a response without an availability flag', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, {}));
 
-    await expect(checkUsernameAvailability('maviay', getToken)).rejects.toThrow('Kullanıcı adı kontrol sonucu okunamadı.');
+    // Act
+    const error = await captureError(checkUsernameAvailability('maviay', getToken));
+
+    // Assert
+    expect(error.message).toBe('Kullanıcı adı kontrol sonucu okunamadı.');
   });
 });
 
 describe('validateBiography', () => {
   it('accepts a bio the server confirms unchanged', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { valid: true, normalized_bio: 'Merhaba' }));
 
-    await expect(validateBiography('Merhaba', getToken)).resolves.toBeUndefined();
+    // Act
+    const result = await validateBiography('Merhaba', getToken);
+
+    // Assert
+    expect(result).toBeUndefined();
   });
 
   it.each([
     { valid: false, normalized_bio: 'Merhaba' },
     { valid: true, normalized_bio: 'merhaba' },
   ])('rejects the unconfirmed result %p', async (result) => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, result));
 
-    await expect(validateBiography('Merhaba', getToken)).rejects.toThrow('Biyografi doğrulaması sunucudan onaylanmadı.');
+    // Act
+    const error = await captureError(validateBiography('Merhaba', getToken));
+
+    // Assert
+    expect(error.message).toBe('Biyografi doğrulaması sunucudan onaylanmadı.');
   });
 });
 
 describe('validatePhoto', () => {
   it('rejects a photo the server does not confirm', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { valid: false }));
 
-    await expect(validatePhoto(null, getToken)).rejects.toThrow('Fotoğraf doğrulaması sunucudan onaylanmadı.');
+    // Act
+    const error = await captureError(validatePhoto(null, getToken));
+
+    // Assert
+    expect(error.message).toBe('Fotoğraf doğrulaması sunucudan onaylanmadı.');
   });
 });
 
 describe('uploadProfilePhoto', () => {
   it('authorizes the upload and sends the bytes to the signed URL without the session token', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, uploadAuthorization));
     uploadMock.mockResolvedValue({ status: 200, body: '', headers: {} });
 
+    // Act
     await uploadProfilePhoto(selectedPhoto, getToken);
 
+    // Assert
     expect(fetchMock).toHaveBeenCalledWith(`${apiUrl}/me/profile-photo`, expect.objectContaining({
       method: 'PUT',
       body: JSON.stringify({ photo: { file_name: 'profile-photo.jpg', mime_type: 'image/jpeg', size_bytes: 240_000 } }),
@@ -296,37 +378,53 @@ describe('uploadProfilePhoto', () => {
     { ...uploadAuthorization, headers: null },
     { ...uploadAuthorization, headers: { 'Content-Length': 240000 } },
   ])('rejects the invalid upload authorization %p', async (authorization) => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, authorization));
 
-    await expect(uploadProfilePhoto(selectedPhoto, getToken)).rejects.toThrow('Fotoğraf yükleme izni sunucudan alınamadı.');
+    // Act
+    const error = await captureError(uploadProfilePhoto(selectedPhoto, getToken));
+
+    // Assert
+    expect(error.message).toBe('Fotoğraf yükleme izni sunucudan alınamadı.');
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
   it('rejects a non-2xx storage response', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, uploadAuthorization));
     uploadMock.mockResolvedValue({ status: 403, body: 'SignatureDoesNotMatch', headers: {} });
 
+    // Act
     const error = await captureError(uploadProfilePhoto(selectedPhoto, getToken));
 
+    // Assert
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error).toMatchObject({ status: 0, code: 'photo_upload_failed' });
   });
 
   it('maps a failed transfer to an upload error', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, uploadAuthorization));
     uploadMock.mockRejectedValue(new Error('socket closed'));
 
-    await expect(uploadProfilePhoto(selectedPhoto, getToken)).rejects.toMatchObject({ code: 'photo_upload_failed' });
+    // Act
+    const error = await captureError(uploadProfilePhoto(selectedPhoto, getToken));
+
+    // Assert
+    expect(error).toMatchObject({ code: 'photo_upload_failed' });
   });
 
   it('aborts the transfer after sixty seconds', async () => {
+    // Arrange
     jest.useFakeTimers();
     fetchMock.mockResolvedValue(jsonResponse(200, uploadAuthorization));
     uploadMock.mockImplementation(abortableFetch);
-
     const pending = captureError(uploadProfilePhoto(selectedPhoto, getToken));
+
+    // Act
     await jest.advanceTimersByTimeAsync(60_000);
 
+    // Assert
     expect(await pending).toMatchObject({ code: 'request_timeout' });
   });
 });
@@ -334,10 +432,15 @@ describe('uploadProfilePhoto', () => {
 describe('completeRegistration', () => {
   const profile = { username: 'maviay', gender: 'female' as const, bio: null, photo: null };
 
-  it('returns the completed registration', async () => {
+  it('posts the profile and returns the completed registration', async () => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, { registration_complete: true, user: completeProfile }));
 
-    await expect(completeRegistration(profile, getToken)).resolves.toEqual({ registration_complete: true, user: completeProfile });
+    // Act
+    const registration = await completeRegistration(profile, getToken);
+
+    // Assert
+    expect(registration).toEqual({ registration_complete: true, user: completeProfile });
     expect(fetchMock).toHaveBeenCalledWith(`${apiUrl}/onboarding/complete`, expect.objectContaining({
       method: 'POST',
       body: JSON.stringify(profile),
@@ -349,8 +452,13 @@ describe('completeRegistration', () => {
     [{ registration_complete: false, user: null }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
     [{ registration_complete: true, user: { username: 1, gender: 'male', bio: null } }, 'Kullanıcı profili oluşturulamadı. Ana ekrana geçiş engellendi.'],
   ])('rejects the malformed payload %p', async (payload, message) => {
+    // Arrange
     fetchMock.mockResolvedValue(jsonResponse(200, payload));
 
-    await expect(completeRegistration(profile, getToken)).rejects.toThrow(message);
+    // Act
+    const error = await captureError(completeRegistration(profile, getToken));
+
+    // Assert
+    expect(error.message).toBe(message);
   });
 });

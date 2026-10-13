@@ -110,149 +110,256 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
-describe('OnboardingWizard navigation', () => {
-  it('starts at the username step and checks availability only there', async () => {
-    await renderWizardAtStep(0);
+async function pressButtonAndSettle(name: string) {
+  await fireEvent.press(screen.getByRole('button', { name }));
+  await finishTransition();
+}
 
+function pendingRequest() {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((onResolve) => { resolve = onResolve; });
+  return { promise, resolve };
+}
+
+async function resolveRequest(request: { resolve: () => void }) {
+  await act(async () => request.resolve());
+  await finishTransition();
+}
+
+describe('OnboardingWizard navigation', () => {
+  it('starts at the username step', async () => {
+    // Arrange
+    const wizard = <OnboardingWizard />;
+
+    // Act
+    await render(wizard);
+
+    // Assert
     expectStep(0);
     expect(screen.getByLabelText('Kayıt adımı 1 / 5')).toBeOnTheScreen();
-    expect(jest.mocked(useUsernameAvailability).mock.lastCall?.[2]).toBe(true);
+  });
 
-    await renderWizardAtStep(1);
+  it('checks the username availability on the username step', async () => {
+    // Arrange
+    const wizard = <OnboardingWizard />;
+
+    // Act
+    await render(wizard);
+
+    // Assert
+    expect(jest.mocked(useUsernameAvailability).mock.lastCall?.[2]).toBe(true);
+  });
+
+  it('stops checking the username availability after the username step', async () => {
+    // Arrange
+    await renderWizardAtStep(0);
+    await fireEvent.changeText(screen.getByLabelText('Kullanıcı adı'), 'maviay');
+
+    // Act
+    await pressPrimary();
+
+    // Assert
     expect(jest.mocked(useUsernameAvailability).mock.lastCall?.[2]).toBe(false);
   });
 
   it('waits for an available username before continuing', async () => {
+    // Arrange
     jest.mocked(useUsernameAvailability).mockReturnValue({ status: 'checking', message: undefined, retry: jest.fn() });
+
+    // Act
     await renderWizardAtStep(0);
 
+    // Assert
     expect(getPrimaryButton()).toBeDisabled();
   });
 
   it('shows the local username format error', async () => {
+    // Arrange
     await renderWizardAtStep(0);
 
+    // Act
     await fireEvent.changeText(screen.getByLabelText('Kullanıcı adı'), 'ab');
 
+    // Assert
     expect(screen.getByText('Kullanıcı adı en az 3 karakter olmalı.')).toBeOnTheScreen();
   });
 
-  it('requires a gender choice', async () => {
-    await renderWizardAtStep(1);
+  it('moves to the gender step and requires a choice', async () => {
+    // Arrange
+    await renderWizardAtStep(0);
+    await fireEvent.changeText(screen.getByLabelText('Kullanıcı adı'), 'maviay');
 
+    // Act
+    await pressPrimary();
+
+    // Assert
     expectStep(1);
     expect(getPrimaryButton()).toBeDisabled();
   });
 
   it('goes back one step at a time', async () => {
+    // Arrange
     await renderWizardAtStep(2);
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Geri' }));
-    await finishTransition();
+    // Act
+    await pressButtonAndSettle('Geri');
 
+    // Assert
     expectStep(1);
     expect(authTransition.endSession).not.toHaveBeenCalled();
   });
 
   it('ends the session when going back from the first step', async () => {
+    // Arrange
     await renderWizardAtStep(0);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Geri' }));
 
+    // Assert
     expect(authTransition.endSession).toHaveBeenCalledTimes(1);
   });
 
   it('reports a failed sign out', async () => {
+    // Arrange
     authTransition.endSession.mockRejectedValue(new Error('offline'));
     await renderWizardAtStep(0);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Geri' }));
 
+    // Assert
     expect(await screen.findByText('Oturum kapatılamadı. Tekrar dene.')).toBeOnTheScreen();
   });
 
   it('locks both actions while signing out', async () => {
+    // Arrange
     authTransition.isSigningOut = true;
+
+    // Act
     await renderWizardAtStep(0);
 
+    // Assert
     expect(screen.getByRole('button', { name: 'Çıkılıyor…' })).toBeDisabled();
     expect(getPrimaryButton()).toBeDisabled();
   });
 
-  it('jumps to a step from the review and back', async () => {
+  it('jumps from the review to the edited step and keeps its value', async () => {
+    // Arrange
     await renderWizardAtStep(4);
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Cinsiyet bilgisini düzenle' }));
-    await finishTransition();
+    // Act
+    await pressButtonAndSettle('Cinsiyet bilgisini düzenle');
 
+    // Assert
     expectStep(1);
     expect(screen.getByRole('radio', { name: /Kadın/ })).toBeChecked();
   });
 });
 
 describe('OnboardingWizard step validation', () => {
-  it('validates the bio with the session token', async () => {
+  it('validates the bio before continuing', async () => {
+    // Arrange
     await renderWizardAtStep(2);
-
     await fireEvent.changeText(screen.getByLabelText('Biyografi'), 'Merhaba');
+
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(validateBiography).toHaveBeenCalledWith('Merhaba', expect.any(Function));
     expectStep(3);
-    await expect(jest.mocked(validateBiography).mock.calls[0][1]()).resolves.toBe('session-token');
+  });
+
+  it('gives the bio validation access to the session token', async () => {
+    // Arrange
+    await renderWizardAtStep(2);
+    await pressPrimary();
+    const getSessionToken = jest.mocked(validateBiography).mock.calls[0][1];
+
+    // Act
+    const token = getSessionToken();
+
+    // Assert
+    await expect(token).resolves.toBe('session-token');
   });
 
   it('keeps the user on the bio step when the server rejects it', async () => {
+    // Arrange
     jest.mocked(validateBiography).mockRejectedValue(new ApiRequestError('invalid', 422, 'invalid_bio', 'bio'));
     await renderWizardAtStep(2);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expectStep(2);
     expect(screen.getByText('Biyografi biçimini kontrol et. En fazla 300 karakter kullanabilirsin.')).toBeOnTheScreen();
     expect(getPrimaryButton()).toBeDisabled();
   });
 
   it('clears a field error once the field is edited', async () => {
+    // Arrange
     jest.mocked(validateBiography).mockRejectedValueOnce(new ApiRequestError('invalid', 422, 'invalid_bio', 'bio'));
     await renderWizardAtStep(2);
     await pressPrimary();
 
+    // Act
     await fireEvent.changeText(screen.getByLabelText('Biyografi'), 'Yeni');
 
+    // Assert
     expect(getPrimaryButton()).toBeEnabled();
   });
 
   it('shows a general error when validation fails without a field', async () => {
+    // Arrange
     jest.mocked(validateBiography).mockRejectedValue(new ApiRequestError('Sunucuya ulaşılamadı.', 0, 'network_error'));
     await renderWizardAtStep(2);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(screen.getByText('Sunucuya ulaşılamadı.')).toBeOnTheScreen();
     expect(getPrimaryButton()).toBeEnabled();
   });
 
   it('shows progress while a step is being validated', async () => {
-    let finishValidation: () => void = () => undefined;
-    jest.mocked(validateBiography).mockReturnValue(new Promise((resolve) => { finishValidation = resolve; }));
+    // Arrange
+    jest.mocked(validateBiography).mockReturnValue(pendingRequest().promise);
     await renderWizardAtStep(2);
 
+    // Act
     await fireEvent.press(getPrimaryButton());
 
+    // Assert
     expect(getPrimaryButton()).toHaveTextContent('Kontrol ediliyor…');
     expect(getPrimaryButton()).toBeDisabled();
-    await act(async () => finishValidation());
-    await finishTransition();
+  });
+
+  it('continues once the pending validation succeeds', async () => {
+    // Arrange
+    const validation = pendingRequest();
+    jest.mocked(validateBiography).mockReturnValue(validation.promise);
+    await renderWizardAtStep(2);
+    await fireEvent.press(getPrimaryButton());
+
+    // Act
+    await resolveRequest(validation);
+
+    // Assert
     expectStep(3);
   });
 
   it('validates the selected photo metadata', async () => {
+    // Arrange
     await renderWizardAtStep(3);
-
     await fireEvent.press(screen.getByText('Kare fotoğraf seç'));
+
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(validatePhoto).toHaveBeenCalledWith(
       { file_name: 'profile-photo.jpg', mime_type: 'image/jpeg', size_bytes: 200_000 },
       expect.any(Function),
@@ -261,39 +368,62 @@ describe('OnboardingWizard step validation', () => {
   });
 
   it('allows skipping the photo', async () => {
+    // Arrange
     await renderWizardAtStep(3);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(validatePhoto).toHaveBeenCalledWith(null, expect.any(Function));
     expectStep(4);
   });
 
   it.each(['Geçersiz fotoğraf seç', 'Dikdörtgen fotoğraf seç'])('blocks a photo chosen with %p', async (choice) => {
+    // Arrange
     await renderWizardAtStep(3);
 
+    // Act
     await fireEvent.press(screen.getByText(choice));
 
+    // Assert
     expect(getPrimaryButton()).toBeDisabled();
   });
 
   it('shows rejected photos in a snackbar', async () => {
+    // Arrange
     await renderWizardAtStep(3);
 
+    // Act
     await fireEvent.press(screen.getByText('Küçük fotoğraf seç'));
 
+    // Assert
     expect(screen.getByText('Fotoğraf çok küçük.')).toBeOnTheScreen();
   });
 });
 
 describe('OnboardingWizard registration', () => {
-  it('creates the profile without a photo', async () => {
-    await renderWizardAtStep(4);
+  it('summarises the profile on the review step before creating the account', async () => {
+    // Arrange
+    await renderWizardAtStep(3);
 
-    expect(getPrimaryButton()).toHaveTextContent('Hesabı oluştur');
-    expect(screen.getByText('@maviay')).toBeOnTheScreen();
+    // Act
     await pressPrimary();
 
+    // Assert
+    expectStep(4);
+    expect(getPrimaryButton()).toHaveTextContent('Hesabı oluştur');
+    expect(screen.getByText('@maviay')).toBeOnTheScreen();
+  });
+
+  it('creates the profile without a photo and opens the home route', async () => {
+    // Arrange
+    await renderWizardAtStep(4);
+
+    // Act
+    await pressPrimary();
+
+    // Assert
     expect(uploadProfilePhoto).not.toHaveBeenCalled();
     expect(completeRegistration).toHaveBeenCalledWith(
       { username: 'maviay', gender: 'female', bio: null, photo: null },
@@ -304,18 +434,30 @@ describe('OnboardingWizard registration', () => {
   });
 
   it('uploads the photo before completing the registration', async () => {
-    let finishUpload: () => void = () => undefined;
-    jest.mocked(uploadProfilePhoto).mockReturnValue(new Promise((resolve) => { finishUpload = resolve; }));
+    // Arrange
+    jest.mocked(uploadProfilePhoto).mockReturnValue(pendingRequest().promise);
     await renderWizardAtStep(4, { selectPhoto: 'Kare fotoğraf seç' });
 
+    // Act
     await fireEvent.press(getPrimaryButton());
 
+    // Assert
     expect(uploadProfilePhoto).toHaveBeenCalledWith(mockSquarePhoto, expect.any(Function));
     expect(getPrimaryButton()).toHaveTextContent('Fotoğraf yükleniyor…');
     expect(completeRegistration).not.toHaveBeenCalled();
+  });
 
-    await act(async () => finishUpload());
+  it('completes the registration with the uploaded photo metadata', async () => {
+    // Arrange
+    const upload = pendingRequest();
+    jest.mocked(uploadProfilePhoto).mockReturnValue(upload.promise);
+    await renderWizardAtStep(4, { selectPhoto: 'Kare fotoğraf seç' });
+    await fireEvent.press(getPrimaryButton());
 
+    // Act
+    await resolveRequest(upload);
+
+    // Assert
     expect(jest.mocked(completeRegistration).mock.calls[0][0].photo).toEqual({
       file_name: 'profile-photo.jpg',
       mime_type: 'image/jpeg',
@@ -325,34 +467,43 @@ describe('OnboardingWizard registration', () => {
   });
 
   it('rejects an incomplete registration response', async () => {
+    // Arrange
     jest.mocked(completeRegistration).mockResolvedValue({ registration_complete: false, user: null });
     await renderWizardAtStep(4);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(screen.getByText('Kayıt tamamlandı yanıtı geçersiz. Ana ekrana geçiş engellendi.')).toBeOnTheScreen();
     expect(router.replace).not.toHaveBeenCalled();
   });
 
   it('continues when the profile was already completed', async () => {
+    // Arrange
     const existingProfile = { username: 'maviay', gender: 'female' as const, bio: 'Merhaba' };
     jest.mocked(completeRegistration).mockRejectedValue(new ApiRequestError('done', 409, 'profile_already_complete'));
     registrationStatus.refresh.mockResolvedValue({ status: 'complete', profile: existingProfile });
     await renderWizardAtStep(4);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(registrationStatus.markComplete).toHaveBeenCalledWith(existingProfile);
     expect(router.replace).toHaveBeenCalledWith('/');
   });
 
   it('reports a completed profile that cannot be confirmed', async () => {
+    // Arrange
     jest.mocked(completeRegistration).mockRejectedValue(new ApiRequestError('done', 409, 'profile_already_complete'));
     registrationStatus.refresh.mockResolvedValue({ status: 'error', message: 'offline', isUnauthorized: false });
     await renderWizardAtStep(4);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expect(screen.getByText('Kayıt bu sırada değişti. Bilgilerini kontrol edip tekrar dene.')).toBeOnTheScreen();
     expect(router.replace).not.toHaveBeenCalled();
   });
@@ -364,11 +515,14 @@ describe('OnboardingWizard registration', () => {
     [new ApiRequestError('Sunucu hatası.', 500, 'internal'), 'Sunucu hatası.'],
     ['boom', 'İşlem tamamlanamadı. Tekrar dene.'],
   ])('shows an action error for %p', async (error, message) => {
+    // Arrange
     jest.mocked(completeRegistration).mockRejectedValue(error);
     await renderWizardAtStep(4);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expectStep(4);
     expect(screen.getByText(message)).toBeOnTheScreen();
     expect(screen.getByTestId('icon-AlertCircle')).toBeOnTheScreen();
@@ -385,11 +539,14 @@ describe('OnboardingWizard registration', () => {
     ['detail errors', new ApiRequestError('bad', 422, 'validation_failed', undefined, { errors: [{ field: 'bio', code: 'invalid_bio' }, { field: 'gender', code: 'invalid_gender' }, 'ignored'] }), 1, 'Bir cinsiyet seçeneği belirle.'],
     ['detail field names', new ApiRequestError('bad', 422, 'validation_failed', undefined, { fields: ['bio', 42] }), 2, 'Bu alanı kontrol edip tekrar dene.'],
   ])('returns to the first invalid field for %s', async (_case, error, step, message) => {
+    // Arrange
     jest.mocked(completeRegistration).mockRejectedValue(error);
     await renderWizardAtStep(4);
 
+    // Act
     await pressPrimary();
 
+    // Assert
     expectStep(step);
     expect(screen.getByText(message)).toBeOnTheScreen();
     expect(screen.queryByTestId('icon-AlertCircle')).toBeNull();

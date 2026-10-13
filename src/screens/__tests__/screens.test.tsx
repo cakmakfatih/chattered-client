@@ -10,28 +10,60 @@ jest.mock('../../features/auth/AuthTransitionProvider', () => ({ useAuthTransiti
 jest.mock('../../features/onboarding/RegistrationStatusProvider', () => ({ useRegistrationStatus: jest.fn() }));
 
 describe('WelcomeScreen', () => {
-  it('offers sign-up and sign-in', async () => {
-    const onSignUp = jest.fn();
-    const onSignIn = jest.fn();
-    await render(<WelcomeScreen onSignUp={onSignUp} onSignIn={onSignIn} />);
+  it('shows the tagline', async () => {
+    // Arrange
+    const welcomeScreen = <WelcomeScreen onSignUp={jest.fn()} onSignIn={jest.fn()} />;
 
+    // Act
+    await render(welcomeScreen);
+
+    // Assert
+    expect(screen.getByText('Anonim sohbet, gerçek bağlar.')).toBeOnTheScreen();
+  });
+
+  it('starts sign-up from the join button', async () => {
+    // Arrange
+    const onSignUp = jest.fn();
+    await render(<WelcomeScreen onSignUp={onSignUp} onSignIn={jest.fn()} />);
+
+    // Act
     await fireEvent.press(screen.getByText('Sohbete katıl'));
+
+    // Assert
+    expect(onSignUp).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts sign-in from the sign-in button', async () => {
+    // Arrange
+    const onSignIn = jest.fn();
+    await render(<WelcomeScreen onSignUp={jest.fn()} onSignIn={onSignIn} />);
+
+    // Act
     await fireEvent.press(screen.getByText('Giriş yap'));
 
-    expect(screen.getByText('Anonim sohbet, gerçek bağlar.')).toBeOnTheScreen();
-    expect(onSignUp).toHaveBeenCalledTimes(1);
+    // Assert
     expect(onSignIn).toHaveBeenCalledTimes(1);
   });
 
   it('shows an error message', async () => {
-    await render(<WelcomeScreen errorMessage="Bir sorun oluştu." onSignUp={jest.fn()} onSignIn={jest.fn()} />);
+    // Arrange
+    const errorMessage = 'Bir sorun oluştu.';
 
+    // Act
+    await render(<WelcomeScreen errorMessage={errorMessage} onSignUp={jest.fn()} onSignIn={jest.fn()} />);
+
+    // Assert
     expect(screen.getByRole('alert')).toHaveTextContent('Bir sorun oluştu.');
   });
 
   it('disables both actions while busy', async () => {
-    await render(<WelcomeScreen isBusy onSignUp={jest.fn()} onSignIn={jest.fn()} />);
+    // Arrange
+    const isBusy = true;
 
+    // Act
+    await render(<WelcomeScreen isBusy={isBusy} onSignUp={jest.fn()} onSignIn={jest.fn()} />);
+
+    // Assert
     const [signUpButton, signInButton] = screen.getAllByRole('button');
     expect(signUpButton).toBeDisabled();
     expect(signInButton).toBeDisabled();
@@ -40,21 +72,39 @@ describe('WelcomeScreen', () => {
 });
 
 describe('SignedInScreen', () => {
-  it('shows the empty chat state and signs out', async () => {
+  it('shows the empty chat state', async () => {
+    // Arrange
+    const signedInScreen = <SignedInScreen onSignOut={jest.fn()} />;
+
+    // Act
+    await render(signedInScreen);
+
+    // Assert
+    expect(screen.getByText('Henüz sohbetin yok')).toBeOnTheScreen();
+  });
+
+  it('signs out from the sign-out button', async () => {
+    // Arrange
     const onSignOut = jest.fn();
     await render(<SignedInScreen onSignOut={onSignOut} />);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Çıkış yap' }));
 
-    expect(screen.getByText('Henüz sohbetin yok')).toBeOnTheScreen();
+    // Assert
     expect(onSignOut).toHaveBeenCalled();
   });
 });
 
 describe('MissingClerkKeyScreen', () => {
   it('explains how to configure the Clerk key', async () => {
-    await render(<MissingClerkKeyScreen />);
+    // Arrange
+    const missingKeyScreen = <MissingClerkKeyScreen />;
 
+    // Act
+    await render(missingKeyScreen);
+
+    // Assert
     expect(screen.getByText('Clerk yapılandırması eksik')).toBeOnTheScreen();
     expect(screen.getByText(/publishable key/)).toBeOnTheScreen();
   });
@@ -69,49 +119,87 @@ describe('RegistrationStatusScreen', () => {
     jest.mocked(useAuthTransition).mockReturnValue({ endSession, isSigningOut, isAuthenticating: false, authenticate: jest.fn() });
   }
 
-  it('retries loading the registration status', async () => {
+  function mockPendingRefresh() {
+    const pending = { finish: () => undefined as void };
+    refresh.mockReturnValue(new Promise<void>((resolve) => { pending.finish = resolve; }));
+    return pending;
+  }
+
+  it('shows the status message', async () => {
+    // Arrange
     mockStatusScreen();
-    let finishRefresh: () => void = () => undefined;
-    refresh.mockReturnValue(new Promise<void>((resolve) => { finishRefresh = resolve; }));
+
+    // Act
     await render(<RegistrationStatusScreen isUnauthorized={false} message="Sunucuya ulaşılamadı." />);
 
+    // Assert
     expect(screen.getByText('Sunucuya ulaşılamadı.')).toBeOnTheScreen();
+  });
+
+  it('retries loading the registration status and disables the button meanwhile', async () => {
+    // Arrange
+    mockStatusScreen();
+    mockPendingRefresh();
+    await render(<RegistrationStatusScreen isUnauthorized={false} message="Sunucuya ulaşılamadı." />);
+
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Yeniden dene' }));
 
+    // Assert
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button')).toBeDisabled();
+  });
 
-    await act(async () => finishRefresh());
+  it('enables the retry button again once the refresh finishes', async () => {
+    // Arrange
+    mockStatusScreen();
+    const pendingRefresh = mockPendingRefresh();
+    await render(<RegistrationStatusScreen isUnauthorized={false} message="Sunucuya ulaşılamadı." />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Yeniden dene' }));
+
+    // Act
+    await act(async () => pendingRefresh.finish());
+
+    // Assert
     expect(screen.getByRole('button')).toBeEnabled();
   });
 
   it('ends the session when the user is unauthorized', async () => {
+    // Arrange
     mockStatusScreen();
     endSession.mockResolvedValue(undefined);
     await render(<RegistrationStatusScreen isUnauthorized message="Oturum doğrulanamadı." />);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Tekrar giriş yap' }));
 
+    // Assert
     expect(endSession).toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
 
   it('shows an error when signing out fails', async () => {
+    // Arrange
     mockStatusScreen();
     endSession.mockRejectedValue(new Error('offline'));
     await render(<RegistrationStatusScreen isUnauthorized message="Oturum doğrulanamadı." />);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Tekrar giriş yap' }));
 
+    // Assert
     expect(screen.getByRole('alert')).toHaveTextContent('Oturum kapatılamadı. Lütfen tekrar deneyin.');
   });
 
   it('is disabled while signing out', async () => {
+    // Arrange
     mockStatusScreen(true);
     await render(<RegistrationStatusScreen isUnauthorized message="Oturum doğrulanamadı." />);
 
+    // Act
     await fireEvent.press(screen.getByRole('button'));
 
+    // Assert
     expect(screen.getByRole('button')).toBeDisabled();
     expect(endSession).not.toHaveBeenCalled();
   });

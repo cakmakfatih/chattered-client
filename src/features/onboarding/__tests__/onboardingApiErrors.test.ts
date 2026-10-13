@@ -18,27 +18,55 @@ describe('getOnboardingFieldErrors', () => {
     ['other', 'photo.width', 'photo', 'Fotoğraf bilgileri geçerli değil.'],
     ['other', 'bio', 'bio', 'Bu alanı kontrol edip tekrar dene.'],
   ])('maps code %s on field %s to %s', (code, field, expectedField, message) => {
-    expect(getOnboardingFieldErrors(apiError(code, field))).toEqual([{ field: expectedField, message }]);
+    // Arrange
+    const error = apiError(code, field);
+
+    // Act
+    const fieldErrors = getOnboardingFieldErrors(error);
+
+    // Assert
+    expect(fieldErrors).toEqual([{ field: expectedField, message }]);
   });
 
-  it('ignores unknown fields and the retryable photo upload error', () => {
-    expect(getOnboardingFieldErrors(apiError('validation_failed', 'unknown'))).toEqual([]);
-    expect(getOnboardingFieldErrors(apiError('photo_upload_incomplete', 'photo'))).toEqual([]);
+  it.each([
+    ['an unknown field', apiError('validation_failed', 'unknown')],
+    ['the retryable photo upload error', apiError('photo_upload_incomplete', 'photo')],
+  ])('ignores %s', (_case, error) => {
+    // Arrange
+    const input = error;
+
+    // Act
+    const fieldErrors = getOnboardingFieldErrors(input);
+
+    // Assert
+    expect(fieldErrors).toEqual([]);
   });
 
   it('collects fields from every details shape', () => {
+    // Arrange
     const details = {
       fields: ['gender', 42],
       errors: [{ field: 'bio', code: 'invalid_bio' }, { code: 'no_field' }, null],
       field_errors: { username: ['taken'] },
     };
+    const error = apiError('validation_failed', undefined, details);
 
-    expect(getOnboardingFieldErrors(apiError('validation_failed', undefined, details)).map(({ field }) => field))
-      .toEqual(['gender', 'bio', 'username']);
+    // Act
+    const fieldErrors = getOnboardingFieldErrors(error);
+
+    // Assert
+    expect(fieldErrors.map(({ field }) => field)).toEqual(['gender', 'bio', 'username']);
   });
 
   it('ignores details that are not an object', () => {
-    expect(getOnboardingFieldErrors(apiError('invalid_gender', undefined, 'details'))).toHaveLength(1);
+    // Arrange
+    const error = apiError('invalid_gender', undefined, 'details');
+
+    // Act
+    const fieldErrors = getOnboardingFieldErrors(error);
+
+    // Assert
+    expect(fieldErrors).toHaveLength(1);
   });
 });
 
@@ -49,7 +77,14 @@ describe('getOnboardingActionMessage', () => {
     [apiError(undefined, undefined, undefined, 401), 'Oturum doğrulanamadı. Yeniden giriş yapıp tekrar dene.'],
     [new Error('Bağlantı kesildi'), 'Bağlantı kesildi'],
     ['boom', 'İşlem tamamlanamadı. Tekrar dene.'],
-  ])('returns the message for %p', (error, message) => {
-    expect(getOnboardingActionMessage(error)).toBe(message);
+  ])('returns the message for %p', (error, expectedMessage) => {
+    // Arrange
+    const input = error;
+
+    // Act
+    const message = getOnboardingActionMessage(input);
+
+    // Assert
+    expect(message).toBe(expectedMessage);
   });
 });

@@ -14,59 +14,103 @@ afterEach(() => {
 
 describe('Snackbar', () => {
   it('renders nothing without a notice', async () => {
-    const { toJSON } = await render(<Snackbar notice={null} onDismiss={jest.fn()} />);
+    // Arrange
+    const notice = null;
 
+    // Act
+    const { toJSON } = await render(<Snackbar notice={notice} onDismiss={jest.fn()} />);
+
+    // Assert
     expect(toJSON()).toBeNull();
   });
 
   it('shows the message and announces it to screen readers', async () => {
-    await render(<Snackbar notice={{ id: 1, message: 'Fotoğraf çok küçük.' }} onDismiss={jest.fn()} />);
+    // Arrange
+    const notice = { id: 1, message: 'Fotoğraf çok küçük.' };
 
+    // Act
+    await render(<Snackbar notice={notice} onDismiss={jest.fn()} />);
+
+    // Assert
     expect(screen.getByText('Fotoğraf çok küçük.')).toBeOnTheScreen();
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith('Fotoğraf çok küçük.');
   });
 
-  it('dismisses itself after the duration', async () => {
+  it('stays visible until the duration has passed', async () => {
+    // Arrange
     const onDismiss = jest.fn();
     await render(<Snackbar notice={{ id: 1, message: 'Mesaj' }} onDismiss={onDismiss} durationMilliseconds={2_000} />);
 
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(1_999));
-    expect(onDismiss).not.toHaveBeenCalled();
 
-    await act(() => jest.advanceTimersByTimeAsync(1));
+    // Assert
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it('dismisses itself after the duration', async () => {
+    // Arrange
+    const onDismiss = jest.fn();
+    await render(<Snackbar notice={{ id: 1, message: 'Mesaj' }} onDismiss={onDismiss} durationMilliseconds={2_000} />);
+
+    // Act
+    await act(() => jest.advanceTimersByTimeAsync(2_000));
+
+    // Assert
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('dismisses when the action is pressed', async () => {
+    // Arrange
     const onDismiss = jest.fn();
     await render(<Snackbar notice={{ id: 1, message: 'Mesaj' }} onDismiss={onDismiss} />);
 
+    // Act
     await fireEvent.press(screen.getByRole('button', { name: 'Tamam' }));
 
+    // Assert
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('restarts the timer for a new notice', async () => {
+  it('shows a new notice without dismissing it on the previous timer', async () => {
+    // Arrange
     const onDismiss = jest.fn();
     const { rerender } = await render(<Snackbar notice={{ id: 1, message: 'İlk' }} onDismiss={onDismiss} />);
     await act(() => jest.advanceTimersByTimeAsync(3_000));
-
     await rerender(<Snackbar notice={{ id: 2, message: 'İkinci' }} onDismiss={onDismiss} />);
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(3_000));
 
+    // Assert
     expect(onDismiss).not.toHaveBeenCalled();
     expect(screen.getByText('İkinci')).toBeOnTheScreen();
-    await act(() => jest.advanceTimersByTimeAsync(1_000));
+  });
+
+  it('dismisses a new notice after its own full duration', async () => {
+    // Arrange
+    const onDismiss = jest.fn();
+    const { rerender } = await render(<Snackbar notice={{ id: 1, message: 'İlk' }} onDismiss={onDismiss} />);
+    await act(() => jest.advanceTimersByTimeAsync(3_000));
+    await rerender(<Snackbar notice={{ id: 2, message: 'İkinci' }} onDismiss={onDismiss} />);
+
+    // Act
+    await act(() => jest.advanceTimersByTimeAsync(4_000));
+
+    // Assert
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('cancels the timer when the notice is cleared', async () => {
+    // Arrange
     const onDismiss = jest.fn();
     const { rerender } = await render(<Snackbar notice={{ id: 1, message: 'Mesaj' }} onDismiss={onDismiss} />);
-
     await rerender(<Snackbar notice={null} onDismiss={onDismiss} />);
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(5_000));
 
+    // Assert
     expect(onDismiss).not.toHaveBeenCalled();
   });
 });

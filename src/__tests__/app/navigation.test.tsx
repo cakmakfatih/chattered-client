@@ -27,11 +27,11 @@ jest.mock('../../features/onboarding/RegistrationStatusProvider', () => ({
   useRegistrationStatus: jest.fn(),
 }));
 jest.mock('../../components/LoadingView', () => {
-  const { Text: MockText } = require('react-native');
+  const { Text: MockText } = jest.requireActual('react-native');
   return { LoadingView: () => <MockText>loading</MockText> };
 });
 jest.mock('../../screens/MissingClerkKeyScreen', () => {
-  const { Text: MockText } = require('react-native');
+  const { Text: MockText } = jest.requireActual('react-native');
   return { MissingClerkKeyScreen: () => <MockText>missing-clerk-key</MockText> };
 });
 
@@ -89,59 +89,79 @@ afterEach(() => {
 
 describe('RootLayout', () => {
   it('waits for the fonts', async () => {
+    // Arrange
     jest.mocked(useFonts).mockReturnValue([false, null]);
     mockSession(false);
 
+    // Act
     await renderApp('/');
 
+    // Assert
     expect(screen.getByText('loading')).toBeOnTheScreen();
   });
 
   it('explains a missing Clerk key', async () => {
+    // Arrange
     delete process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
     mockSession(false);
 
+    // Act
     await renderApp('/');
 
+    // Assert
     expect(screen.getByText('missing-clerk-key')).toBeOnTheScreen();
   });
 
   it('waits for Clerk before building the navigator', async () => {
+    // Arrange
     mockSession(false, 'loading', false);
 
+    // Act
     await renderApp('/');
 
+    // Assert
     expect(screen.getByText('loading')).toBeOnTheScreen();
   });
 
   it.each(['/', '/callback', '/hosted-auth-callback'])('keeps %s reachable in every state', async (url) => {
+    // Arrange
     mockSession(false);
 
+    // Act
     const app = await renderApp(url);
 
+    // Assert
     expect(app.getPathname()).toBe(url);
   });
 });
 
 describe('RootLayout guards', () => {
-  it('shows the welcome screen only to signed-out users', async () => {
-    mockSession(false);
-    await renderApp('/welcome');
-    expect(screen.getByText('screen:welcome')).toBeOnTheScreen();
+  it.each([
+    ['a signed-out user', false, 'loading', true],
+    ['a user with a completed registration', true, 'complete', false],
+  ] as const)('shows the welcome screen to %s: %p', async (_case, isSignedIn, status, isVisible) => {
+    // Arrange
+    mockSession(isSignedIn, status);
 
-    mockSession(true, 'complete');
+    // Act
     await renderApp('/welcome');
-    expect(screen.queryByText('screen:welcome')).toBeNull();
+
+    // Assert
+    expect(screen.queryByText('screen:welcome') !== null).toBe(isVisible);
   });
 
-  it('shows onboarding only while the registration is incomplete', async () => {
-    mockSession(true, 'incomplete');
-    await renderApp('/onboarding');
-    expect(screen.getByText('screen:onboarding')).toBeOnTheScreen();
+  it.each([
+    ['an incomplete registration', 'incomplete', true],
+    ['a completed registration', 'complete', false],
+  ] as const)('shows onboarding for %s: %p', async (_case, status, isVisible) => {
+    // Arrange
+    mockSession(true, status);
 
-    mockSession(true, 'complete');
+    // Act
     await renderApp('/onboarding');
-    expect(screen.queryByText('screen:onboarding')).toBeNull();
+
+    // Assert
+    expect(screen.queryByText('screen:onboarding') !== null).toBe(isVisible);
   });
 
   it.each([
@@ -149,36 +169,61 @@ describe('RootLayout guards', () => {
     [true, 'loading'],
     [true, 'incomplete'],
   ] as const)('hides the tabs when signed in is %p and the registration is %p', async (isSignedIn, status) => {
+    // Arrange
     mockSession(isSignedIn, status);
 
+    // Act
     await renderApp('/chats');
 
+    // Assert
     expect(screen.queryByText('screen:chats')).toBeNull();
   });
 });
 
 describe('TabsLayout', () => {
   it('opens the tabs for a completed registration', async () => {
+    // Arrange
     mockSession(true, 'complete');
 
+    // Act
     const app = await renderApp('/chats');
 
+    // Assert
     expect(screen.getByText('screen:chats')).toBeOnTheScreen();
     expect(app.getSegments()).toEqual(['(tabs)', 'chats']);
-    expect(screen.getByText('Sohbetler')).toBeOnTheScreen();
-    expect(screen.getByText('Keşfet')).toBeOnTheScreen();
-    expect(screen.getByText('Profil')).toBeOnTheScreen();
-    for (const icon of ['MessageCircle', 'Compass', 'UserRound']) {
-      expect(getIconHints(icon).sort()).toEqual([`${colors.primary}:24`, `${colors.muted}:24`].sort());
-    }
+  });
+
+  it.each(['Sohbetler', 'Keşfet', 'Profil'])('labels the %p tab', async (label) => {
+    // Arrange
+    mockSession(true, 'complete');
+
+    // Act
+    await renderApp('/chats');
+
+    // Assert
+    expect(screen.getByText(label)).toBeOnTheScreen();
+  });
+
+  it.each(['MessageCircle', 'Compass', 'UserRound'])('draws the %s icon in the active and inactive colours', async (icon) => {
+    // Arrange
+    mockSession(true, 'complete');
+
+    // Act
+    await renderApp('/chats');
+
+    // Assert
+    expect(getIconHints(icon).sort()).toEqual([`${colors.primary}:24`, `${colors.muted}:24`].sort());
   });
 
   it('switches tabs from the tab bar', async () => {
+    // Arrange
     mockSession(true, 'complete');
     const app = await renderApp('/chats');
 
+    // Act
     await fireEvent.press(screen.getByLabelText('Profil sekmesi'));
 
+    // Assert
     expect(app.getPathname()).toBe('/profile');
     expect(screen.getByText('screen:profile')).toBeOnTheScreen();
   });

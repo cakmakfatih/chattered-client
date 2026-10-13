@@ -27,59 +27,125 @@ function createPhoto(overrides: Partial<SelectedPhoto> = {}): SelectedPhoto {
 
 describe('username validation', () => {
   it.each(['abc', 'user_name', 'a1b2c3', 'abcdefghijklmno'])('accepts %p', (username) => {
-    expect(getUsernameFormatError(username)).toBeNull();
-    expect(isValidUsername(username)).toBe(true);
+    // Arrange
+    const input = username;
+
+    // Act
+    const error = getUsernameFormatError(input);
+
+    // Assert
+    expect(error).toBeNull();
+    expect(isValidUsername(input)).toBe(true);
   });
 
   it('rejects usernames shorter than three characters', () => {
-    expect(getUsernameFormatError('ab')).toBe('Kullanıcı adı en az 3 karakter olmalı.');
-    expect(isValidUsername('ab')).toBe(false);
+    // Arrange
+    const username = 'ab';
+
+    // Act
+    const error = getUsernameFormatError(username);
+
+    // Assert
+    expect(error).toBe('Kullanıcı adı en az 3 karakter olmalı.');
+    expect(isValidUsername(username)).toBe(false);
   });
 
   it('rejects usernames longer than fifteen characters', () => {
-    expect(getUsernameFormatError('abcdefghijklmnop')).toBe('Kullanıcı adı en fazla 15 karakter olabilir.');
-    expect(isValidUsername('abcdefghijklmnop')).toBe(false);
+    // Arrange
+    const username = 'abcdefghijklmnop';
+
+    // Act
+    const error = getUsernameFormatError(username);
+
+    // Assert
+    expect(error).toBe('Kullanıcı adı en fazla 15 karakter olabilir.');
+    expect(isValidUsername(username)).toBe(false);
   });
 
   it.each(['1abc', '_abc', 'Abc', 'ab-c', 'abç', 'ab c'])('rejects the malformed username %p', (username) => {
-    expect(getUsernameFormatError(username)).toMatch(/küçük harfle başlamalı/);
-    expect(isValidUsername(username)).toBe(false);
+    // Arrange
+    const input = username;
+
+    // Act
+    const error = getUsernameFormatError(input);
+
+    // Assert
+    expect(error).toMatch(/küçük harfle başlamalı/);
+    expect(isValidUsername(input)).toBe(false);
   });
 });
 
 describe('gender validation', () => {
   it.each(['male', 'female', 'other'] as const)('accepts %p', (gender) => {
-    expect(getGenderError(gender)).toBeNull();
+    // Arrange
+    const input = gender;
+
+    // Act
+    const error = getGenderError(input);
+
+    // Assert
+    expect(error).toBeNull();
   });
 
   it('requires a selection', () => {
-    expect(getGenderError(null)).toBe('Bir seçenek belirle.');
+    // Arrange
+    const gender = null;
+
+    // Act
+    const error = getGenderError(gender);
+
+    // Assert
+    expect(error).toBe('Bir seçenek belirle.');
   });
 });
 
 describe('bio validation', () => {
-  it('accepts an empty bio and a bio at the code point limit', () => {
-    expect(getBioError('')).toBeNull();
-    expect(getBioError('a'.repeat(maxBioCodePoints))).toBeNull();
+  it.each([
+    ['an empty bio', ''],
+    ['a bio at the code point limit', 'a'.repeat(maxBioCodePoints)],
+    ['emoji up to the limit, counted as single code points', '😀'.repeat(maxBioCodePoints)],
+    ['line breaks and tabs', 'satır\nsatır\tsekme'],
+  ])('accepts %s', (_case, bio) => {
+    // Arrange
+    const input = bio;
+
+    // Act
+    const error = getBioError(input);
+
+    // Assert
+    expect(error).toBeNull();
   });
 
-  it('counts emoji as single code points', () => {
-    expect(getBioError('😀'.repeat(maxBioCodePoints))).toBeNull();
-    expect(getBioError('😀'.repeat(maxBioCodePoints + 1))).toBe('Biyografi en fazla 300 karakter olabilir.');
-  });
+  it.each([
+    ['emoji beyond the code point limit', '😀'.repeat(maxBioCodePoints + 1), 'Biyografi en fazla 300 karakter olabilir.'],
+    ['other control characters', 'zil\u0007', 'Biyografide desteklenmeyen kontrol karakterleri var.'],
+  ])('rejects %s', (_case, bio, message) => {
+    // Arrange
+    const input = bio;
 
-  it('allows line breaks and tabs but rejects other control characters', () => {
-    expect(getBioError('satır\nsatır\tsekme')).toBeNull();
-    expect(getBioError('zil\u0007')).toBe('Biyografide desteklenmeyen kontrol karakterleri var.');
+    // Act
+    const error = getBioError(input);
+
+    // Assert
+    expect(error).toBe(message);
   });
 });
 
 describe('photo metadata validation', () => {
-  it('accepts JPEG, PNG and HEIC files with matching MIME types', () => {
-    expect(getPhotoMetadataError({ file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 1 })).toBeNull();
-    expect(getPhotoMetadataError({ file_name: 'a.JPEG', mime_type: 'image/jpeg', size_bytes: 1 })).toBeNull();
-    expect(getPhotoMetadataError({ file_name: 'a.png', mime_type: 'image/png', size_bytes: 1 })).toBeNull();
-    expect(getPhotoMetadataError({ file_name: 'a.heic', mime_type: 'image/heic', size_bytes: 1 })).toBeNull();
+  it.each([
+    { file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 1 },
+    { file_name: 'a.JPEG', mime_type: 'image/jpeg', size_bytes: 1 },
+    { file_name: 'a.png', mime_type: 'image/png', size_bytes: 1 },
+    { file_name: 'a.heic', mime_type: 'image/heic', size_bytes: 1 },
+  ])('accepts %p with a matching MIME type', (photo) => {
+    // Arrange
+    const metadata = photo;
+
+    // Act
+    const error = getPhotoMetadataError(metadata);
+
+    // Assert
+    expect(error).toBeNull();
   });
 
   it.each([
@@ -92,27 +158,61 @@ describe('photo metadata validation', () => {
     [{ file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 10 * 1024 * 1024 + 1 }, 'Fotoğraf en fazla 10 MiB olabilir.'],
     [{ file_name: 'a.png', mime_type: 'image/jpeg', size_bytes: 1 }, 'Fotoğrafın MIME türü uzantısıyla eşleşmiyor.'],
   ])('rejects %p', (photo, message) => {
-    expect(getPhotoMetadataError(photo)).toBe(message);
+    // Arrange
+    const metadata = photo;
+
+    // Act
+    const error = getPhotoMetadataError(metadata);
+
+    // Assert
+    expect(error).toBe(message);
   });
 });
 
 describe('photo dimension validation', () => {
-  it('requires both sides to reach the minimum dimension', () => {
-    expect(isPhotoLargeEnough({ width: minPhotoDimension, height: minPhotoDimension })).toBe(true);
-    expect(isPhotoLargeEnough({ width: minPhotoDimension - 1, height: 2000 })).toBe(false);
-    expect(isPhotoLargeEnough({ width: 2000, height: minPhotoDimension - 1 })).toBe(false);
+  it.each([
+    ['both sides at the minimum', { width: minPhotoDimension, height: minPhotoDimension }, true],
+    ['a width below the minimum', { width: minPhotoDimension - 1, height: 2000 }, false],
+    ['a height below the minimum', { width: 2000, height: minPhotoDimension - 1 }, false],
+  ])('treats a photo with %s as large enough: %p', (_case, size, expected) => {
+    // Arrange
+    const photo = size;
+
+    // Act
+    const isLargeEnough = isPhotoLargeEnough(photo);
+
+    // Assert
+    expect(isLargeEnough).toBe(expected);
   });
 
-  it('requires a square photo of at least the minimum dimension', () => {
-    expect(hasRequiredPhotoDimensions(createPhoto({ width: 512, height: 512 }))).toBe(true);
-    expect(hasRequiredPhotoDimensions(createPhoto({ width: 800, height: 600 }))).toBe(false);
-    expect(hasRequiredPhotoDimensions(createPhoto({ width: 400, height: 400 }))).toBe(false);
+  it.each([
+    ['a 512 px square', { width: 512, height: 512 }, true],
+    ['a non-square photo', { width: 800, height: 600 }, false],
+    ['a square below the minimum', { width: 400, height: 400 }, false],
+  ])('checks the required dimensions of %s', (_case, size, expected) => {
+    // Arrange
+    const photo = createPhoto(size);
+
+    // Act
+    const hasRequiredDimensions = hasRequiredPhotoDimensions(photo);
+
+    // Assert
+    expect(hasRequiredDimensions).toBe(expected);
   });
 
-  it('reports size, shape and metadata problems in that order', () => {
-    expect(getSelectedPhotoError(createPhoto({ width: 400, height: 400, size_bytes: 0 }))).toBe(photoTooSmallMessage);
-    expect(getSelectedPhotoError(createPhoto({ width: 800, height: 600, size_bytes: 0 }))).toBe('Fotoğraf kare olarak kırpılmalı.');
-    expect(getSelectedPhotoError(createPhoto({ size_bytes: 0 }))).toBe('Fotoğraf boş olamaz.');
-    expect(getSelectedPhotoError(createPhoto())).toBeNull();
+  it.each([
+    ['size before shape and metadata', { width: 400, height: 400, size_bytes: 0 }, photoTooSmallMessage],
+    ['shape before metadata', { width: 800, height: 600, size_bytes: 0 }, 'Fotoğraf kare olarak kırpılmalı.'],
+    ['metadata last', { size_bytes: 0 }, 'Fotoğraf boş olamaz.'],
+    ['no problem for a valid photo', {}, null],
+  ])('reports %s', (_case, overrides, expected) => {
+    // Arrange
+    const photo = createPhoto(overrides);
+
+    // Act
+    const error = getSelectedPhotoError(photo);
+
+    // Assert
+    expect(error).toBe(expected);
   });
 });

@@ -24,6 +24,13 @@ function renderAvailability(initialProps: HookProps) {
   );
 }
 
+async function renderFailedCheck() {
+  checkAvailability.mockRejectedValueOnce(new ApiRequestError('Sunucuya ulaşılamadı.', 0, 'network_error'));
+  const hook = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
+  await act(() => jest.advanceTimersByTimeAsync(500));
+  return hook;
+}
+
 beforeEach(() => {
   jest.useFakeTimers();
 });
@@ -33,86 +40,134 @@ afterEach(() => {
 });
 
 describe('useUsernameAvailability', () => {
-  it('stays idle while disabled or when the username is malformed', async () => {
-    const { result, rerender } = await renderAvailability({ username: 'maviay', enabled: false, revision: 0 });
-    expect(result.current.status).toBe('idle');
+  it('stays idle while disabled', async () => {
+    // Arrange
+    const props = { username: 'maviay', enabled: false, revision: 0 };
 
+    // Act
+    const { result } = await renderAvailability(props);
+
+    // Assert
+    expect(result.current.status).toBe('idle');
+  });
+
+  it('stays idle and skips the check when the username is malformed', async () => {
+    // Arrange
+    const { result, rerender } = await renderAvailability({ username: 'maviay', enabled: false, revision: 0 });
     await rerender({ username: 'Ab', enabled: true, revision: 1 });
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(1_000));
 
+    // Assert
     expect(result.current.status).toBe('idle');
     expect(checkAvailability).not.toHaveBeenCalled();
   });
 
-  it('debounces the check and reports an available username', async () => {
+  it('waits before checking a new username', async () => {
+    // Arrange
     checkAvailability.mockResolvedValue(true);
     const { result } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
 
-    expect(result.current.status).toBe('waiting');
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(499));
+
+    // Assert
+    expect(result.current.status).toBe('waiting');
     expect(checkAvailability).not.toHaveBeenCalled();
+  });
 
-    await act(() => jest.advanceTimersByTimeAsync(1));
+  it('reports an available username after the debounce', async () => {
+    // Arrange
+    checkAvailability.mockResolvedValue(true);
+    const { result } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
 
+    // Act
+    await act(() => jest.advanceTimersByTimeAsync(500));
+
+    // Assert
     expect(checkAvailability).toHaveBeenCalledWith('maviay', getToken);
     expect(result.current.status).toBe('available');
   });
 
   it('reports a taken username', async () => {
+    // Arrange
     checkAvailability.mockResolvedValue(false);
     const { result } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
 
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(500));
 
+    // Assert
     expect(result.current.status).toBe('taken');
   });
 
   it('only checks the latest username while typing', async () => {
+    // Arrange
     checkAvailability.mockResolvedValue(true);
     const { result, rerender } = await renderAvailability({ username: 'mavi', enabled: true, revision: 1 });
-
     await act(() => jest.advanceTimersByTimeAsync(300));
     await rerender({ username: 'maviay', enabled: true, revision: 2 });
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(500));
 
+    // Assert
     expect(checkAvailability).toHaveBeenCalledTimes(1);
     expect(checkAvailability).toHaveBeenCalledWith('maviay', getToken);
     expect(result.current.status).toBe('available');
   });
 
   it('ignores a result that arrives after the username changed', async () => {
-    let resolveFirstCheck: (available: boolean) => void = () => undefined;
-    checkAvailability.mockReturnValueOnce(new Promise((resolve) => { resolveFirstCheck = resolve; }));
+    // Arrange
+    const firstCheck = { resolve: (_available: boolean) => undefined as void };
+    checkAvailability.mockReturnValueOnce(new Promise((resolve) => { firstCheck.resolve = resolve; }));
     const { result, rerender } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
     await act(() => jest.advanceTimersByTimeAsync(500));
-
     await rerender({ username: 'maviay_', enabled: true, revision: 2 });
-    await act(async () => resolveFirstCheck(true));
 
+    // Act
+    await act(async () => firstCheck.resolve(true));
+
+    // Assert
     expect(result.current.status).toBe('waiting');
   });
 
-  it('exposes API error messages and retries on demand', async () => {
+  it('exposes API error messages', async () => {
+    // Arrange
     checkAvailability.mockRejectedValueOnce(new ApiRequestError('Sunucuya ulaşılamadı.', 0, 'network_error'));
     const { result } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(500));
 
+    // Assert
     expect(result.current).toMatchObject({ status: 'error', message: 'Sunucuya ulaşılamadı.' });
+  });
 
+  it('checks again when retry is requested after an error', async () => {
+    // Arrange
+    const { result } = await renderFailedCheck();
     checkAvailability.mockResolvedValueOnce(true);
     await act(async () => result.current.retry());
+
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(500));
 
+    // Assert
     expect(checkAvailability).toHaveBeenCalledTimes(2);
     expect(result.current.status).toBe('available');
   });
 
   it('uses a generic message for unexpected errors', async () => {
+    // Arrange
     checkAvailability.mockRejectedValue(new Error('boom'));
     const { result } = await renderAvailability({ username: 'maviay', enabled: true, revision: 1 });
 
+    // Act
     await act(() => jest.advanceTimersByTimeAsync(500));
 
+    // Assert
     expect(result.current.message).toBe('Kullanıcı adı şu an kontrol edilemedi. Lütfen tekrar deneyin.');
   });
 });
@@ -125,15 +180,43 @@ describe('availability status helpers', () => {
     ['available', 'Bu kullanıcı adı uygun.'],
     ['taken', 'Bu kullanıcı adı kullanımda.'],
     ['error', 'Kullanıcı adı şu an kontrol edilemedi.'],
-  ] as const)('describes the %p status', (status, message) => {
-    expect(getUsernameAvailabilityMessage(status)).toBe(message);
+  ] as const)('describes the %p status', (status, expectedMessage) => {
+    // Arrange
+    const input = status;
+
+    // Act
+    const message = getUsernameAvailabilityMessage(input);
+
+    // Assert
+    expect(message).toBe(expectedMessage);
   });
 
-  it('classifies pending and available statuses', () => {
-    expect(isUsernameCheckPending('waiting')).toBe(true);
-    expect(isUsernameCheckPending('checking')).toBe(true);
-    expect(isUsernameCheckPending('available')).toBe(false);
-    expect(isUsernameAvailable('available')).toBe(true);
-    expect(isUsernameAvailable('taken')).toBe(false);
+  it.each([
+    ['waiting', true],
+    ['checking', true],
+    ['available', false],
+  ] as const)('treats the %p status as pending: %p', (status, expected) => {
+    // Arrange
+    const input = status;
+
+    // Act
+    const isPending = isUsernameCheckPending(input);
+
+    // Assert
+    expect(isPending).toBe(expected);
+  });
+
+  it.each([
+    ['available', true],
+    ['taken', false],
+  ] as const)('treats the %p status as available: %p', (status, expected) => {
+    // Arrange
+    const input = status;
+
+    // Act
+    const isAvailable = isUsernameAvailable(input);
+
+    // Assert
+    expect(isAvailable).toBe(expected);
   });
 });
