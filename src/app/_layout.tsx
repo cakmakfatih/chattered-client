@@ -15,9 +15,8 @@ import { MissingClerkKeyScreen } from '../screens/MissingClerkKeyScreen';
 import { AuthTransitionProvider } from '../features/auth/AuthTransitionProvider';
 import { RegistrationStatusProvider, useRegistrationStatus } from '../features/onboarding/RegistrationStatusProvider';
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
 export default function RootLayout() {
+  const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const [fontsLoaded] = useFonts({
     GoogleSansRegular: GoogleSansFlex_400Regular,
     GoogleSansMedium: GoogleSansFlex_500Medium,

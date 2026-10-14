@@ -1,6 +1,9 @@
-import type { Gender, PhotoMetadata } from './types';
+import { File, UploadType, type UploadResult } from 'expo-file-system';
+import type { Gender, PhotoMetadata, SelectedPhoto } from './types';
 
 type GetSessionToken = () => Promise<string | null>;
+
+type HttpMethod = 'GET' | 'POST' | 'PUT';
 
 type ApiErrorBody = {
   error?: {
@@ -34,75 +37,85 @@ export type RegistrationStatusResponse = {
   user: RegistrationProfile | null;
 };
 
+type ProfilePhotoUploadAuthorization = {
+  upload_url: string;
+  method: 'PUT';
+  headers: Record<string, string>;
+};
+
 const apiBaseUrl = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, '');
 const apiRequestTimeoutMilliseconds = 15_000;
+const photoUploadTimeoutMilliseconds = 60_000;
+const photoUploadFailedMessage = 'Fotoğraf yüklenemedi. Bağlantını kontrol edip tekrar dene ya da fotoğrafı kaldır.';
+
+const connectionErrorMessage = 'Lütfen bağlantınızı kontrol edin.';
+const unauthorizedMessage = 'Oturum doğrulanamadı. Lütfen tekrar giriş yapın.';
+const usernameCheckRetryDelays = [250, 500, 1000];
+
+type JsonResponse = { response: Response; payload: unknown };
 
 async function request<TResponse>(
   path: string,
   getToken: GetSessionToken,
   body?: unknown,
+  method: HttpMethod = body === undefined ? 'GET' : 'POST',
 ): Promise<TResponse> {
-  if (!apiBaseUrl) {
-    throw new Error('Lütfen bağlantınızı kontrol edin.');
-  }
+  if (!apiBaseUrl) throw new Error(connectionErrorMessage);
 
+  const token = await requireSessionToken(getToken);
+  const { response, payload } = await fetchJson(`${apiBaseUrl}/api/v1${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  if (!response.ok) throw toApiRequestError(response.status, payload);
+  return payload as TResponse;
+}
+
+async function requireSessionToken(getToken: GetSessionToken): Promise<string> {
   let token: string | null;
   try {
     token = await getToken();
   } catch {
-    throw new ApiRequestError('Oturum doğrulanamadı. Lütfen tekrar giriş yapın.', 401, 'unauthorized');
+    token = null;
   }
-  if (!token) throw new ApiRequestError('Oturum doğrulanamadı. Lütfen tekrar giriş yapın.', 401, 'unauthorized');
+  if (!token) throw new ApiRequestError(unauthorizedMessage, 401, 'unauthorized');
+  return token;
+}
 
-  let response: Response;
-  let payload: unknown;
+/** Sends the request with a timeout; a body that is not JSON is read as null unless the timeout cut it off. */
+async function fetchJson(url: string, init: RequestInit): Promise<JsonResponse> {
   const abortController = new AbortController();
   const requestTimeout = setTimeout(() => abortController.abort(), apiRequestTimeoutMilliseconds);
   try {
-    response = await fetch(`${apiBaseUrl}/api/v1${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
-      signal: abortController.signal,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    try {
-      payload = await response.json();
-    } catch (error) {
+    const response = await fetch(url, { ...init, signal: abortController.signal });
+    const payload = await response.json().catch((error: unknown) => {
       if (abortController.signal.aborted) throw error;
-      payload = null;
-    }
+      return null;
+    });
+    return { response, payload };
   } catch {
-    throw new ApiRequestError(
-      'Lütfen bağlantınızı kontrol edin.',
-      0,
-      abortController.signal.aborted ? 'request_timeout' : 'network_error',
-    );
+    const code = abortController.signal.aborted ? 'request_timeout' : 'network_error';
+    throw new ApiRequestError(connectionErrorMessage, 0, code);
   } finally {
     clearTimeout(requestTimeout);
   }
+}
 
-  if (!response.ok) {
-    const apiError = asApiErrorBody(payload);
-    if (response.status === 401) {
-      throw new ApiRequestError(
-        'Oturum doğrulanamadı. Lütfen tekrar giriş yapın.',
-        response.status,
-        'unauthorized',
-      );
-    }
-    throw new ApiRequestError(
-      getUserFacingApiErrorMessage(response.status, apiError?.error?.code),
-      response.status,
-      apiError?.error?.code,
-      apiError?.error?.field,
-      apiError?.error?.details,
-    );
-  }
-
-  return payload as TResponse;
+function toApiRequestError(status: number, payload: unknown): ApiRequestError {
+  if (status === 401) return new ApiRequestError(unauthorizedMessage, status, 'unauthorized');
+  const apiError = asApiErrorBody(payload)?.error;
+  return new ApiRequestError(
+    getUserFacingApiErrorMessage(status, apiError?.code),
+    status,
+    apiError?.code,
+    apiError?.field,
+    apiError?.details,
+  );
 }
 
 function getUserFacingApiErrorMessage(status: number, code?: string): string {
@@ -139,33 +152,32 @@ export async function getRegistrationStatus(getToken: GetSessionToken): Promise<
 }
 
 export async function checkUsernameAvailability(username: string, getToken: GetSessionToken): Promise<boolean> {
-  const retryDelays = [250, 500, 1000];
-  let result: { available: boolean };
+  const result = await requestUsernameCheck(username, getToken);
+  if (typeof result?.available !== 'boolean') throw new Error('Kullanıcı adı kontrol sonucu okunamadı.');
+  return result.available;
+}
 
+/** A fresh session can briefly be rejected while Clerk finishes activating it, so 401s are retried with backoff. */
+async function requestUsernameCheck(username: string, getToken: GetSessionToken): Promise<{ available: boolean }> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      result = await request<{ available: boolean }>('/onboarding/username/check', getToken, { username });
-      break;
+      return await request<{ available: boolean }>('/onboarding/username/check', getToken, { username });
     } catch (error) {
-      const retryDelay = retryDelays[attempt];
-      if (!(error instanceof ApiRequestError) || error.status !== 401 || retryDelay === undefined) {
-        if (error instanceof ApiRequestError && error.status === 401) {
-          throw new ApiRequestError(
-            'Kullanıcı adı şu an kontrol edilemedi. Lütfen tekrar deneyin.',
-            error.status,
-            error.code,
-            error.field,
-            error.details,
-          );
-        }
-        throw error;
+      const isUnauthorized = error instanceof ApiRequestError && error.status === 401;
+      const retryDelay = usernameCheckRetryDelays[attempt];
+      if (!isUnauthorized) throw error;
+      if (retryDelay === undefined) {
+        throw new ApiRequestError(
+          'Kullanıcı adı şu an kontrol edilemedi. Lütfen tekrar deneyin.',
+          error.status,
+          error.code,
+          error.field,
+          error.details,
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, retryDelay));
     }
   }
-
-  if (typeof result?.available !== 'boolean') throw new Error('Kullanıcı adı kontrol sonucu okunamadı.');
-  return result.available;
 }
 
 export async function validateBiography(bio: string | null, getToken: GetSessionToken): Promise<void> {
@@ -178,6 +190,64 @@ export async function validateBiography(bio: string | null, getToken: GetSession
 export async function validatePhoto(photo: PhotoMetadata | null, getToken: GetSessionToken): Promise<void> {
   const result = await request<{ valid: boolean }>('/onboarding/photo/validate', getToken, { photo });
   if (result?.valid !== true) throw new Error('Fotoğraf doğrulaması sunucudan onaylanmadı.');
+}
+
+/** Uploads the photo bytes directly to storage; registration completion must follow a successful upload. */
+export async function uploadProfilePhoto(photo: SelectedPhoto, getToken: GetSessionToken): Promise<void> {
+  const authorization = await authorizeProfilePhotoUpload(photo, getToken);
+  await putPhotoToSignedUrl(photo.uri, authorization);
+}
+
+async function authorizeProfilePhotoUpload(
+  photo: PhotoMetadata,
+  getToken: GetSessionToken,
+): Promise<ProfilePhotoUploadAuthorization> {
+  const { file_name, mime_type, size_bytes } = photo;
+  const result = await request<unknown>('/me/profile-photo', getToken, { photo: { file_name, mime_type, size_bytes } }, 'PUT');
+  if (!isProfilePhotoUploadAuthorization(result)) {
+    throw new Error('Fotoğraf yükleme izni sunucudan alınamadı.');
+  }
+  return result;
+}
+
+async function putPhotoToSignedUrl(photoUri: string, authorization: ProfilePhotoUploadAuthorization): Promise<void> {
+  const abortController = new AbortController();
+  const uploadTimeout = setTimeout(() => abortController.abort(), photoUploadTimeoutMilliseconds);
+  let result: UploadResult;
+  try {
+    // The signed URL is a bearer credential: never log it and never attach the Clerk token here.
+    result = await new File(photoUri).upload(authorization.upload_url, {
+      httpMethod: authorization.method,
+      uploadType: UploadType.BINARY_CONTENT,
+      headers: authorization.headers,
+      sessionType: 'foreground',
+      signal: abortController.signal,
+    });
+  } catch {
+    throw new ApiRequestError(
+      photoUploadFailedMessage,
+      0,
+      abortController.signal.aborted ? 'request_timeout' : 'photo_upload_failed',
+    );
+  } finally {
+    clearTimeout(uploadTimeout);
+  }
+
+  if (result.status < 200 || result.status >= 300) {
+    throw new ApiRequestError(photoUploadFailedMessage, 0, 'photo_upload_failed');
+  }
+}
+
+function isProfilePhotoUploadAuthorization(value: unknown): value is ProfilePhotoUploadAuthorization {
+  if (!value || typeof value !== 'object') return false;
+  const authorization = value as Record<string, unknown>;
+  const headers = authorization.headers as Record<string, unknown> | null | undefined;
+  return typeof authorization.upload_url === 'string'
+    && /^https?:\/\//i.test(authorization.upload_url)
+    && authorization.method === 'PUT'
+    && !!headers
+    && typeof headers === 'object'
+    && Object.values(headers).every((headerValue) => typeof headerValue === 'string');
 }
 
 export async function completeRegistration(

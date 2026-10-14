@@ -1,14 +1,12 @@
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Animated, Image, Linking, Modal, StyleSheet, TextInput, View } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { Camera, Check, ChevronRight, ImagePlus, X } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { memo } from 'react';
+import { ActivityIndicator, Image, StyleSheet, TextInput, View } from 'react-native';
+import { Check, ChevronRight } from 'lucide-react-native';
 import { AppPressable } from '../../components/AppPressable';
 import { AppText } from '../../components/AppText';
 import { ButtonLabel } from '../../components/ButtonLabel';
 import { colors } from '../../theme/colors';
 import type { Gender, SelectedPhoto } from './types';
-import { getBioError, getPhotoMetadataError, maxBioCodePoints, maxUsernameCharacters } from './validation';
+import { getBioError, maxBioCodePoints, maxUsernameCharacters } from './validation';
 import { isUsernameAvailable, isUsernameCheckPending, type useUsernameAvailability } from './useUsernameAvailability';
 
 type Availability = ReturnType<typeof useUsernameAvailability>;
@@ -38,15 +36,7 @@ export const UsernameStep = memo(function UsernameStep({
 }) {
   const available = isUsernameAvailable(availability.status);
   const checking = isUsernameCheckPending(availability.status);
-  const availabilityText = availability.status === 'error'
-    ? availability.message ?? 'Kullanıcı adı şu an kontrol edilemedi.'
-    : availability.status === 'available'
-      ? 'Bu kullanıcı adı uygun.'
-      : availability.status === 'taken'
-        ? 'Bu kullanıcı adı kullanımda.'
-        : checking
-          ? 'Kullanıcı adı kontrol ediliyor…'
-          : `3–${maxUsernameCharacters} karakter; küçük harf, rakam ve alt çizgi kullan.`;
+  const availabilityText = getAvailabilityText(availability);
 
   return (
     <View style={styles.stepContent}>
@@ -81,6 +71,14 @@ export const UsernameStep = memo(function UsernameStep({
     </View>
   );
 });
+
+function getAvailabilityText(availability: Availability): string {
+  if (availability.status === 'error') return availability.message ?? 'Kullanıcı adı şu an kontrol edilemedi.';
+  if (availability.status === 'available') return 'Bu kullanıcı adı uygun.';
+  if (availability.status === 'taken') return 'Bu kullanıcı adı kullanımda.';
+  if (isUsernameCheckPending(availability.status)) return 'Kullanıcı adı kontrol ediliyor…';
+  return `3–${maxUsernameCharacters} karakter; küçük harf, rakam ve alt çizgi kullan.`;
+}
 
 export const GenderStep = memo(function GenderStep({
   value,
@@ -157,265 +155,6 @@ export const BioStep = memo(function BioStep({
   );
 });
 
-export const PhotoStep = memo(function PhotoStep({
-  photo,
-  errorMessage,
-  onChange,
-}: {
-  photo: SelectedPhoto | null;
-  errorMessage?: string;
-  onChange: (photo: SelectedPhoto | null) => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const [pickerSource, setPickerSource] = useState<'camera' | 'library' | null>(null);
-  const [selectionError, setSelectionError] = useState<string | null>(null);
-  const [isSourceSheetMounted, setSourceSheetMounted] = useState(false);
-  const [isSourceSheetVisible, setSourceSheetVisible] = useState(false);
-  const [isPreviewVisible, setPreviewVisible] = useState(false);
-  const [backdropOpacity] = useState(() => new Animated.Value(0));
-  const [sheetTranslateY] = useState(() => new Animated.Value(280));
-  const onSourceSheetClosed = useRef<(() => void) | null>(null);
-  const metadataError = photo ? getPhotoMetadataError(photo) : null;
-
-  const openSourceSheet = useCallback(() => {
-    backdropOpacity.setValue(0);
-    sheetTranslateY.setValue(280);
-    onSourceSheetClosed.current = null;
-    setSourceSheetMounted(true);
-    setSourceSheetVisible(true);
-  }, [backdropOpacity, sheetTranslateY]);
-
-  const closeSourceSheet = useCallback((onClosed?: () => void) => {
-    onSourceSheetClosed.current = onClosed ?? null;
-    setSourceSheetVisible(false);
-  }, []);
-
-  useEffect(() => {
-    if (!isSourceSheetMounted) return undefined;
-
-    const animation = Animated.parallel(isSourceSheetVisible
-      ? [
-        Animated.timing(backdropOpacity, { toValue: 1, duration: 120, useNativeDriver: true }),
-        Animated.timing(sheetTranslateY, { toValue: 0, duration: 240, useNativeDriver: true }),
-      ]
-      : [
-        Animated.timing(backdropOpacity, { toValue: 0, duration: 100, useNativeDriver: true }),
-        Animated.timing(sheetTranslateY, { toValue: 280, duration: 220, useNativeDriver: true }),
-      ]);
-
-    animation.start(({ finished }) => {
-      if (!finished || isSourceSheetVisible) return;
-      setSourceSheetMounted(false);
-      onSourceSheetClosed.current?.();
-      onSourceSheetClosed.current = null;
-    });
-
-    return () => animation.stop();
-  }, [backdropOpacity, isSourceSheetMounted, isSourceSheetVisible, sheetTranslateY]);
-
-  const handlePermissionDenied = useCallback((permission: ImagePicker.PermissionResponse, sourceName: string) => {
-    const message = `${sourceName} erişim izni verilmedi. İzin vermeden de bu adımı atlayabilirsin.`;
-    Alert.alert(
-      'İzin gerekli',
-      message,
-      permission.canAskAgain
-        ? [{ text: 'Tamam' }]
-        : [
-          { text: 'Vazgeç', style: 'cancel' },
-          { text: 'Ayarları aç', onPress: () => { void Linking.openSettings(); } },
-        ],
-    );
-  }, []);
-
-  const choosePhoto = useCallback(async (source: 'camera' | 'library') => {
-    if (pickerSource) return;
-    setPickerSource(source);
-    setSelectionError(null);
-
-    try {
-      const permission = source === 'camera'
-        ? await ImagePicker.requestCameraPermissionsAsync()
-        : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        handlePermissionDenied(permission, source === 'camera' ? 'Kamera' : 'Fotoğraf arşivi');
-        return;
-      }
-
-      const result = source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
-      const asset = result.canceled ? null : result.assets[0];
-      if (!asset) return;
-      if (asset.type && asset.type !== 'image') {
-        setSelectionError('Bir fotoğraf dosyası seçmelisin.');
-        return;
-      }
-      if (!asset.fileSize) {
-        setSelectionError('Fotoğrafın boyutu okunamadı. Başka bir fotoğraf seçmeyi dene.');
-        return;
-      }
-
-      const photoName = getPhotoFileName(asset.fileName, asset.uri, asset.mimeType);
-      const mimeType = asset.mimeType ?? mimeTypeFromName(photoName) ?? '';
-      onChange({ file_name: photoName, mime_type: mimeType, size_bytes: asset.fileSize, uri: asset.uri });
-    } catch {
-      setSelectionError('Fotoğraf açılamadı. Tekrar deneyebilir veya bu adımı atlayabilirsin.');
-    } finally {
-      setPickerSource(null);
-    }
-  }, [handlePermissionDenied, onChange, pickerSource]);
-
-  const removePhoto = useCallback(() => {
-    onChange(null);
-    setSelectionError(null);
-    setPreviewVisible(false);
-  }, [onChange]);
-
-  const openCamera = useCallback(() => {
-    if (isSourceSheetMounted) {
-      closeSourceSheet(() => { void choosePhoto('camera'); });
-      return;
-    }
-    void choosePhoto('camera');
-  }, [choosePhoto, closeSourceSheet, isSourceSheetMounted]);
-
-  const openGallery = useCallback(() => {
-    if (isSourceSheetMounted) {
-      closeSourceSheet(() => { void choosePhoto('library'); });
-      return;
-    }
-    void choosePhoto('library');
-  }, [choosePhoto, closeSourceSheet, isSourceSheetMounted]);
-
-  return (
-    <View style={styles.stepContent}>
-      {photo ? (
-        <View style={styles.photoPreviewWrap}>
-          <AppPressable accessibilityRole="button" accessibilityLabel="Profil fotoğrafını tam ekran görüntüle" onPress={() => setPreviewVisible(true)}>
-            <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
-          </AppPressable>
-          <AppPressable accessibilityRole="button" accessibilityLabel="Fotoğrafı kaldır" onPress={removePhoto} style={styles.removePhoto}>
-            <X size={16} color={colors.surface} />
-          </AppPressable>
-        </View>
-      ) : (
-        <AppPressable
-          accessibilityRole="button"
-          accessibilityLabel="Profil fotoğrafı ekle"
-          onPress={openSourceSheet}
-          style={styles.photoPlaceholder}
-        >
-          <ImagePlus size={32} color={colors.muted} />
-        </AppPressable>
-      )}
-      <AppText style={styles.photoOptional}>Profil fotoğrafı eklemek isteğe bağlı.</AppText>
-      <View style={styles.photoActions}>
-        <PickerButton
-          icon={<Camera size={18} color={colors.primary} />}
-          label="Kamera"
-          loading={pickerSource === 'camera'}
-          disabled={pickerSource !== null}
-          onPress={openCamera}
-        />
-        <PickerButton
-          icon={<ImagePlus size={18} color={colors.primary} />}
-          label="Galeri"
-          loading={pickerSource === 'library'}
-          disabled={pickerSource !== null}
-          onPress={openGallery}
-        />
-      </View>
-      {errorMessage || selectionError || metadataError ? (
-        <AppText style={[styles.helperText, styles.errorText]}>{errorMessage ?? selectionError ?? metadataError}</AppText>
-      ) : null}
-
-      <Modal
-        animationType="none"
-        transparent
-        visible={isSourceSheetMounted}
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => closeSourceSheet()}
-      >
-        <View style={styles.sheetModal}>
-          <Animated.View pointerEvents="none" style={[styles.sheetBackdrop, { opacity: backdropOpacity }]} />
-          <AppPressable accessibilityRole="button" accessibilityLabel="Fotoğraf seçeneklerini kapat" onPress={() => closeSourceSheet()} style={styles.sheetDismissArea} />
-          <Animated.View style={[styles.sourceSheet, { paddingBottom: Math.max(insets.bottom, 16), transform: [{ translateY: sheetTranslateY }] }]}>
-            <View style={styles.sheetHandle} />
-            <AppText style={styles.sheetTitle}>Profil fotoğrafı ekle</AppText>
-            <AppPressable accessibilityRole="button" onPress={openCamera} style={styles.sheetOption}>
-              <View style={styles.sheetOptionIcon}><Camera size={21} color={colors.primary} /></View>
-              <AppText style={styles.sheetOptionText}>Kamera</AppText>
-            </AppPressable>
-            <AppPressable accessibilityRole="button" onPress={openGallery} style={styles.sheetOption}>
-              <View style={styles.sheetOptionIcon}><ImagePlus size={21} color={colors.primary} /></View>
-              <AppText style={styles.sheetOptionText}>Galeri</AppText>
-            </AppPressable>
-          </Animated.View>
-        </View>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        visible={isPreviewVisible}
-        statusBarTranslucent
-        navigationBarTranslucent
-        onRequestClose={() => setPreviewVisible(false)}
-      >
-        <View style={styles.fullscreenPreview}>
-          {photo ? <Image source={{ uri: photo.uri }} resizeMode="contain" style={styles.fullscreenImage} /> : null}
-          <AppPressable
-            accessibilityRole="button"
-            accessibilityLabel="Tam ekran önizlemeyi kapat"
-            onPress={() => setPreviewVisible(false)}
-            style={[styles.previewClose, { top: insets.top + 12 }]}
-          >
-            <X size={24} color={colors.surface} />
-          </AppPressable>
-        </View>
-      </Modal>
-    </View>
-  );
-});
-
-function PickerButton({
-  icon,
-  label,
-  loading,
-  disabled,
-  onPress,
-}: {
-  icon: ReactNode;
-  label: string;
-  loading: boolean;
-  disabled: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <AppPressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.pickerButton, disabled && styles.buttonDisabled]}>
-      {loading ? <ActivityIndicator size="small" color={colors.primary} /> : icon}
-      <ButtonLabel style={styles.pickerButtonText}>{label}</ButtonLabel>
-    </AppPressable>
-  );
-}
-
-function getPhotoFileName(fileName: string | null | undefined, uri: string, mimeType?: string): string {
-  const uriPath = uri.split(/[?#]/, 1)[0] ?? uri;
-  const uriName = uriPath.split(/[\\/]/).pop() ?? '';
-  const candidate = (fileName || uriName).split(/[\\/]/).pop() ?? '';
-  if (candidate.includes('.')) return candidate;
-  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/heic' ? 'heic' : mimeType === 'image/jpeg' ? 'jpg' : '';
-  return extension ? `profile-photo.${extension}` : candidate;
-}
-
-function mimeTypeFromName(fileName: string): string | null {
-  const extension = fileName.split('.').pop()?.toLowerCase();
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'png') return 'image/png';
-  if (extension === 'heic') return 'image/heic';
-  return null;
-}
-
 export const ReviewStep = memo(function ReviewStep({
   username,
   genderLabel,
@@ -482,27 +221,6 @@ const styles = StyleSheet.create({
   bioInput: { minHeight: 156, borderWidth: 1, borderColor: '#DADCE0', borderRadius: 16, color: colors.ink, fontSize: 15, lineHeight: 22, padding: 15, fontFamily: 'GoogleSansRegular' },
   bioMeta: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   characterCount: { color: colors.muted, fontSize: 12, marginTop: 8 },
-  photoPlaceholder: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F1F3F4', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 12 },
-  photoPreviewWrap: { alignSelf: 'center', position: 'relative', marginBottom: 12 },
-  photoPreview: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F1F3F4' },
-  removePhoto: { position: 'absolute', right: 0, top: 0, width: 28, height: 28, borderRadius: 14, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  photoOptional: { color: colors.ink, fontSize: 14, textAlign: 'center', marginBottom: 18 },
-  photoActions: { flexDirection: 'row', gap: 12 },
-  pickerButton: { flex: 1, minWidth: 0, minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: colors.surfaceBlue, borderRadius: 23, paddingHorizontal: 12 },
-  buttonDisabled: { opacity: 0.55 },
-  pickerButtonText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
-  sheetModal: { flex: 1, justifyContent: 'flex-end' },
-  sheetBackdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(32, 33, 36, 0.42)' },
-  sheetDismissArea: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  sourceSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: colors.surface, paddingTop: 10, paddingHorizontal: 20 },
-  sheetHandle: { width: 36, height: 4, alignSelf: 'center', borderRadius: 2, backgroundColor: '#DADCE0', marginBottom: 18 },
-  sheetTitle: { color: colors.ink, fontSize: 19, fontWeight: '600', marginBottom: 10 },
-  sheetOption: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 14, borderRadius: 16, paddingHorizontal: 8 },
-  sheetOptionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceBlue },
-  sheetOptionText: { color: colors.ink, fontSize: 16, fontWeight: '500' },
-  fullscreenPreview: { flex: 1, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' },
-  fullscreenImage: { width: '100%', height: '100%' },
-  previewClose: { position: 'absolute', right: 18, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(32, 33, 36, 0.72)' },
   reviewList: { paddingTop: 22 },
   reviewRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.surfaceBlue },
   reviewValueGroup: { maxWidth: '70%', flexDirection: 'row', alignItems: 'center', gap: 8 },

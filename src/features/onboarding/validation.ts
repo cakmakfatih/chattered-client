@@ -1,8 +1,10 @@
 import * as v from 'valibot';
-import type { Gender, PhotoMetadata } from './types';
+import type { Gender, PhotoMetadata, SelectedPhoto } from './types';
 
 export const maxBioCodePoints = 300;
 export const maxUsernameCharacters = 15;
+export const minPhotoDimension = 512;
+export const photoTooSmallMessage = `Fotoğraf çok küçük. En az ${minPhotoDimension}×${minPhotoDimension} piksel olmalı.`;
 const maxPhotoBytes = 10 * 1024 * 1024;
 const usernamePattern = /^[a-z][a-z0-9_]*$/;
 
@@ -12,7 +14,7 @@ const usernameSchema = v.pipe(
 );
 
 const genderSchema = v.pipe(
-  v.string(),
+  v.string('Bir seçenek belirle.'),
   v.check((gender): gender is Gender => gender === 'male' || gender === 'female' || gender === 'other', 'Bir seçenek belirle.'),
 );
 
@@ -83,4 +85,18 @@ export function getBioError(bio: string): string | null {
 
 export function getPhotoMetadataError(photo: PhotoMetadata): string | null {
   return firstIssue(photoSchema, photo);
+}
+
+export function isPhotoLargeEnough(size: { width: number; height: number }): boolean {
+  return size.width >= minPhotoDimension && size.height >= minPhotoDimension;
+}
+
+export function hasRequiredPhotoDimensions(photo: SelectedPhoto): boolean {
+  return isPhotoLargeEnough(photo) && photo.width === photo.height;
+}
+
+export function getSelectedPhotoError(photo: SelectedPhoto): string | null {
+  if (!isPhotoLargeEnough(photo)) return photoTooSmallMessage;
+  if (!hasRequiredPhotoDimensions(photo)) return 'Fotoğraf kare olarak kırpılmalı.';
+  return getPhotoMetadataError(photo);
 }
